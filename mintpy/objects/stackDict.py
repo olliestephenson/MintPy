@@ -178,12 +178,22 @@ class ifgramStackDict:
                                                                               t=str(dsDataType),
                                                                               s=dsShape))
             # get bperp
+            # Modification by Ollie 3/1/21, skip perp baseline for now
+            # Removed 17/5/21, now we have baseline files
+            # try:
             data = np.zeros(self.numIfgram, dtype=dsDataType)
             for i in range(self.numIfgram):
                 ifgramObj = self.pairsDict[self.pairs[i]]
                 data[i] = ifgramObj.get_perp_baseline(family=self.dsName0)
             # write
             f.create_dataset(dsName, data=data)
+            # except:
+            #     print("Can't get perp. baseline, setting all values to 0")
+            #     data = np.zeros(self.numIfgram, dtype=dsDataType)
+            #     for i in range(self.numIfgram):
+            #         data[i] = 0 
+            #     # write
+            #     f.create_dataset(dsName, data=data)
 
             ###############################
             # 1D dataset containing bool value of dropping the interferograms or not

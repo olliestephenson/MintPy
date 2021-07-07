@@ -90,6 +90,10 @@ def create_parser():
                      help='marker size of reference point, default: 10')
     ref.add_argument('--ref-marker', dest='ref_marker', metavar='SYMBOL', default='s',
                      help='marker symbol of reference point')
+    # Added by Ollie, June 2021, for quick switching of the reference region just based on value
+    # Assumes that we're dealing with a linear fit
+    ref.add_argument('--ref-subtract', dest='ref_subtract', metavar='VALUE', type=float, default=0,
+                     help='Subtrack a value from the whole of the plotted field. Same units as command line selection')
     return parser
 
 
@@ -329,6 +333,9 @@ def main(iargs=None):
                                                      disp_unit=inps.disp_unit,
                                                      wrap=inps.wrap,
                                                      wrap_range=inps.wrap_range)
+    # Added by Ollie, June 2021
+    # Quick way of changing the reference for a velocity field 
+    data -= inps.ref_subtract
     if inps.wrap:
         inps.vlim = inps.wrap_range
 

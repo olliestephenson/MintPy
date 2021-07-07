@@ -160,7 +160,9 @@ def prepare_stack(inputDir, filePattern, metadata=dict(), baseline_dict=dict(), 
         # prepare metadata for current file
         isce_file = isce_files[i]
         if processor in ['tops', 'stripmap']:
-            dates = os.path.basename(os.path.dirname(isce_file)).split('_')  # to modify to YYYYMMDDTHHMMSS
+            # dates = os.path.basename(os.path.dirname(isce_file)).split('_')  # to modify to YYYYMMDDTHHMMSS
+            dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-') # Ollie modification 3/1/21 for topsApp format
+            dates = ptime.yyyymmdd(dates)
         elif processor == 'alosStack':
             dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-')  # to modify to YYYYMMDDTHHMMSS
             dates = ptime.yyyymmdd(dates)

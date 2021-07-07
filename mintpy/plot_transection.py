@@ -49,6 +49,17 @@ def create_parser():
                              'number of input offsets should be:\n'
                              '    1 - same (sequential) offset between adjacent transects OR\n'
                              '    num_file - different (cumulative) offset for each file, starting from 0.')
+    # Added by Ollie, July 2021
+    # NOTE - there might be a way of passing all of these parameters in a file - see view.py script
+    ###
+    # parser.add_argument('--ylim',dest='ylim',nargs=2, metavar='(YMIN, YMAX)', type=float,default=None,
+    #                     help='Y axis limits on profile plot, in the same units as the data')
+    # parser.add_argument('-v','--vlim', dest='vlim', nargs=2, metavar=('VMIN', 'VMAX'), type=float,
+    #                     help='Display limits for matrix plotting.')
+    # data.add_argument('-u', '--unit', dest='disp_unit', metavar='UNIT',
+    #                     help='unit for display.')
+    ### 
+
     parser.add_argument('--noverbose', dest='print_msg', action='store_false',
                         help='Disable the verbose message printing.')
 
@@ -167,6 +178,16 @@ def get_view_cmd(iargs):
     if inps.dset:
         view_cmd += ' {} '.format(inps.dset)
     view_cmd += ' '.join(view_args)
+    ###
+    # Added by Ollie, July 2021, for Makran plotting
+    # if inps.vlim:
+    #     view_cmd += ' -v {} {} -u {}'.format(vmin,vmax)
+    # if inps.unit:
+    #     view_cmd += ' -u {}'.format(unit)
+    # print(view_cmd)
+    view_cmd += ' -v -10 10 -u mm/yr'
+    ###
+        
     return view_cmd
 
 
@@ -321,6 +342,13 @@ class transectionViewer():
         self.ax_txn.yaxis.set_minor_locator(ticker.AutoMinorLocator(10))
         self.ax_txn.set_xlabel('Distance (km)', fontsize=self.font_size)
         self.ax_txn.set_ylabel(self.disp_unit, fontsize=self.font_size)
+        
+        ###
+        # Added by Ollie for Makran plotting, July 2021 #TODO - modfiy this
+        # if self.ylim is not None:
+        #     self.ax_txn.set_ylim([self.ylim[0],self.ylim[1])
+        self.ax_txn.set_ylim([-20,20]) # y limits for the profile 
+        ###
         self.ax_txn.tick_params(which='both', direction='in', labelsize=self.font_size,
                                 bottom=True, top=True, left=True, right=True)
         self.ax_txn.set_xlim(0, txn['distance'][-1]/1000.0)

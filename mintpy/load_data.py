@@ -660,10 +660,11 @@ def prepare_metadata(iDict):
 
         # run module
         print('prep_isce.py', ' '.join(iargs))
-        try:
-            prep_isce.main(iargs)
-        except:
-            warnings.warn('prep_isce.py failed. Assuming its result exists and continue...')
+        # try/except removed by Ollie - when prep_isce fails we want to know why
+        # try:
+        prep_isce.main(iargs)
+        # except:
+        #     warnings.warn('prep_isce.py failed. Assuming its result exists and continue...')
 
     elif processor == 'aria':
         from mintpy import prep_aria

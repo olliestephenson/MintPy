@@ -692,9 +692,13 @@ def calc_weight(stack_obj, box, weight_func='var', dropIfgram=True, chunk_size=1
     if 'NCORRLOOKS' in stack_obj.metadata.keys():
         L = float(stack_obj.metadata['NCORRLOOKS'])
     else:
-        # use the typical ratio of resolution vs pixel size of Sentinel-1 IW mode
-        L = int(stack_obj.metadata['ALOOKS']) * int(stack_obj.metadata['RLOOKS'])
-        L /= 1.94
+        try:
+            # use the typical ratio of resolution vs pixel size of Sentinel-1 IW mode
+            L = int(stack_obj.metadata['ALOOKS']) * int(stack_obj.metadata['RLOOKS'])
+            L /= 1.94
+        except:
+            print('WARNING - manually inputting NCORRLOOKS')
+            L = 20*5/1.94 # Added by Ollie as a workaround, 13/5/21
     # make sure L >= 1
     L = max(np.rint(L).astype(int), 1)
 

@@ -7,6 +7,9 @@
 # Recomend import:
 #   from mintpy import solid_earth_tides as SET
 
+# Modified by Ollie 03/06/21
+# To deal with an issue with CENTER_LINE_UTC variable
+
 
 import os
 import sys
@@ -202,7 +205,7 @@ def get_datetime_list(ts_file, date_wise_acq_time=False):
         utc_sec = dt.timedelta(seconds=float(atr['CENTER_LINE_UTC']))
         sensingMid = [dt.datetime.strptime(i, '%Y%m%d') + utc_sec for i in date_list]
 
-    return sensingMid
+    return sensingMid, atr['CENTER_LINE_UTC']
 
 
 def plot_sensingMid_variation(sensingMid, save_fig=True, disp_fig=False, figsize=[8, 3]):
@@ -256,7 +259,7 @@ def calc_solid_earth_tides_timeseries(ts_file, geom_file, set_file, date_wise_ac
         ]
 
     # prepare datetime
-    dt_objs = get_datetime_list(ts_file, date_wise_acq_time=date_wise_acq_time)
+    dt_objs, center_line_utc = get_datetime_list(ts_file, date_wise_acq_time=date_wise_acq_time)
 
     # initiate data matrix
     num_date = len(dt_objs)
@@ -303,6 +306,7 @@ def calc_solid_earth_tides_timeseries(ts_file, geom_file, set_file, date_wise_ac
     ## output
     # attribute
     atr['FILE_TYPE'] = 'timeseries'
+    atr['CENTER_LINE_UTC'] = center_line_utc
     atr['UNIT'] = 'm'
     for key in ['REF_Y', 'REF_X', 'REF_DATE']:
         if key in atr.keys():

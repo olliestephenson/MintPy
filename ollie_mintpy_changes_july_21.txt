@@ -1,0 +1,468 @@
+diff --git a/mintpy/ifgram_inversion.py b/mintpy/ifgram_inversion.py
+index d082a6a..decec25 100755
+--- a/mintpy/ifgram_inversion.py
++++ b/mintpy/ifgram_inversion.py
+@@ -692,9 +692,13 @@ def calc_weight(stack_obj, box, weight_func='var', dropIfgram=True, chunk_size=1
+     if 'NCORRLOOKS' in stack_obj.metadata.keys():
+         L = float(stack_obj.metadata['NCORRLOOKS'])
+     else:
+-        # use the typical ratio of resolution vs pixel size of Sentinel-1 IW mode
+-        L = int(stack_obj.metadata['ALOOKS']) * int(stack_obj.metadata['RLOOKS'])
+-        L /= 1.94
++        try:
++            # use the typical ratio of resolution vs pixel size of Sentinel-1 IW mode
++            L = int(stack_obj.metadata['ALOOKS']) * int(stack_obj.metadata['RLOOKS'])
++            L /= 1.94
++        except:
++            print('WARNING - manually inputting NCORRLOOKS')
++            L = 20*5/1.94 # Added by Ollie as a workaround, 13/5/21
+     # make sure L >= 1
+     L = max(np.rint(L).astype(int), 1)
+ 
+diff --git a/mintpy/image_stitch.py b/mintpy/image_stitch.py
+index 669082a..d223310 100755
+--- a/mintpy/image_stitch.py
++++ b/mintpy/image_stitch.py
+@@ -217,7 +217,7 @@ def stitch_two_matrices(mat1, atr1, mat2, atr2, apply_offset=True, print_msg=Tru
+     return mat, atr, mat11, mat22, mat_diff
+ 
+ 
+-def plot_stitch(mat11, mat22, mat, mat_diff, out_fig=None):
++def plot_stitch(mat11, mat22, mat, mat_diff, out_fig=None,disp_fig=False):
+     """plot stitching result"""
+ 
+     fig = plt.figure(figsize=[15.0, 8.0])
+@@ -275,7 +275,7 @@ def stitch_files(fnames, out_file, apply_offset=True, disp_fig=True, no_data_val
+         if apply_offset:
+             print('plot stitching & shifting result ...')
+             suffix = '_{}{}'.format(i, i+1)
+-            out_fig = '{}_{}.png'.format(os.path.splitext(out_file)[0], sufffix)
++            out_fig = '{}_{}.png'.format(os.path.splitext(out_file)[0], suffix)
+             plot_stitch(mat11, mat22, mat, mat_diff,
+                         out_fig=out_fig,
+                         disp_fig=disp_fig)
+diff --git a/mintpy/load_data.py b/mintpy/load_data.py
+index 31594af..58baba4 100755
+--- a/mintpy/load_data.py
++++ b/mintpy/load_data.py
+@@ -660,10 +660,11 @@ def prepare_metadata(iDict):
+ 
+         # run module
+         print('prep_isce.py', ' '.join(iargs))
+-        try:
+-            prep_isce.main(iargs)
+-        except:
+-            warnings.warn('prep_isce.py failed. Assuming its result exists and continue...')
++        # try/except removed by Ollie - when prep_isce fails we want to know why
++        # try:
++        prep_isce.main(iargs)
++        # except:
++        #     warnings.warn('prep_isce.py failed. Assuming its result exists and continue...')
+ 
+     elif processor == 'aria':
+         from mintpy import prep_aria
+diff --git a/mintpy/objects/stackDict.py b/mintpy/objects/stackDict.py
+index 971b6d6..891bc02 100644
+--- a/mintpy/objects/stackDict.py
++++ b/mintpy/objects/stackDict.py
+@@ -178,12 +178,22 @@ class ifgramStackDict:
+                                                                               t=str(dsDataType),
+                                                                               s=dsShape))
+             # get bperp
++            # Modification by Ollie 3/1/21, skip perp baseline for now
++            # Removed 17/5/21, now we have baseline files
++            # try:
+             data = np.zeros(self.numIfgram, dtype=dsDataType)
+             for i in range(self.numIfgram):
+                 ifgramObj = self.pairsDict[self.pairs[i]]
+                 data[i] = ifgramObj.get_perp_baseline(family=self.dsName0)
+             # write
+             f.create_dataset(dsName, data=data)
++            # except:
++            #     print("Can't get perp. baseline, setting all values to 0")
++            #     data = np.zeros(self.numIfgram, dtype=dsDataType)
++            #     for i in range(self.numIfgram):
++            #         data[i] = 0 
++            #     # write
++            #     f.create_dataset(dsName, data=data)
+ 
+             ###############################
+             # 1D dataset containing bool value of dropping the interferograms or not
+diff --git a/mintpy/plot_transection.py b/mintpy/plot_transection.py
+index 29011e6..dc8ac01 100755
+--- a/mintpy/plot_transection.py
++++ b/mintpy/plot_transection.py
+@@ -49,6 +49,17 @@ def create_parser():
+                              'number of input offsets should be:\n'
+                              '    1 - same (sequential) offset between adjacent transects OR\n'
+                              '    num_file - different (cumulative) offset for each file, starting from 0.')
++    # Added by Ollie, July 2021
++    # NOTE - there might be a way of passing all of these parameters in a file - see view.py script
++    ###
++    # parser.add_argument('--ylim',dest='ylim',nargs=2, metavar='(YMIN, YMAX)', type=float,default=None,
++    #                     help='Y axis limits on profile plot, in the same units as the data')
++    # parser.add_argument('-v','--vlim', dest='vlim', nargs=2, metavar=('VMIN', 'VMAX'), type=float,
++    #                     help='Display limits for matrix plotting.')
++    # data.add_argument('-u', '--unit', dest='disp_unit', metavar='UNIT',
++    #                     help='unit for display.')
++    ### 
++
+     parser.add_argument('--noverbose', dest='print_msg', action='store_false',
+                         help='Disable the verbose message printing.')
+ 
+@@ -167,6 +178,16 @@ def get_view_cmd(iargs):
+     if inps.dset:
+         view_cmd += ' {} '.format(inps.dset)
+     view_cmd += ' '.join(view_args)
++    ###
++    # Added by Ollie, July 2021, for Makran plotting
++    # if inps.vlim:
++    #     view_cmd += ' -v {} {} -u {}'.format(vmin,vmax)
++    # if inps.unit:
++    #     view_cmd += ' -u {}'.format(unit)
++    # print(view_cmd)
++    view_cmd += ' -v -10 10 -u mm/yr'
++    ###
++        
+     return view_cmd
+ 
+ 
+@@ -321,6 +342,13 @@ class transectionViewer():
+         self.ax_txn.yaxis.set_minor_locator(ticker.AutoMinorLocator(10))
+         self.ax_txn.set_xlabel('Distance (km)', fontsize=self.font_size)
+         self.ax_txn.set_ylabel(self.disp_unit, fontsize=self.font_size)
++        
++        ###
++        # Added by Ollie for Makran plotting, July 2021 #TODO - modfiy this
++        # if self.ylim is not None:
++        #     self.ax_txn.set_ylim([self.ylim[0],self.ylim[1])
++        self.ax_txn.set_ylim([-20,20]) # y limits for the profile 
++        ###
+         self.ax_txn.tick_params(which='both', direction='in', labelsize=self.font_size,
+                                 bottom=True, top=True, left=True, right=True)
+         self.ax_txn.set_xlim(0, txn['distance'][-1]/1000.0)
+diff --git a/mintpy/prep_isce.py b/mintpy/prep_isce.py
+index 2b9bd04..cecce5e 100755
+--- a/mintpy/prep_isce.py
++++ b/mintpy/prep_isce.py
+@@ -160,7 +160,9 @@ def prepare_stack(inputDir, filePattern, metadata=dict(), baseline_dict=dict(),
+         # prepare metadata for current file
+         isce_file = isce_files[i]
+         if processor in ['tops', 'stripmap']:
+-            dates = os.path.basename(os.path.dirname(isce_file)).split('_')  # to modify to YYYYMMDDTHHMMSS
++            # dates = os.path.basename(os.path.dirname(isce_file)).split('_')  # to modify to YYYYMMDDTHHMMSS
++            dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-') # Ollie modification 3/1/21 for topsApp format
++            dates = ptime.yyyymmdd(dates)
+         elif processor == 'alosStack':
+             dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-')  # to modify to YYYYMMDDTHHMMSS
+             dates = ptime.yyyymmdd(dates)
+diff --git a/mintpy/save_kmz.py b/mintpy/save_kmz.py
+index 1ede28c..be875f9 100755
+--- a/mintpy/save_kmz.py
++++ b/mintpy/save_kmz.py
+@@ -90,6 +90,10 @@ def create_parser():
+                      help='marker size of reference point, default: 10')
+     ref.add_argument('--ref-marker', dest='ref_marker', metavar='SYMBOL', default='s',
+                      help='marker symbol of reference point')
++    # Added by Ollie, June 2021, for quick switching of the reference region just based on value
++    # Assumes that we're dealing with a linear fit
++    ref.add_argument('--ref-subtract', dest='ref_subtract', metavar='VALUE', type=float, default=0,
++                     help='Subtrack a value from the whole of the plotted field. Same units as command line selection')
+     return parser
+ 
+ 
+@@ -329,6 +333,9 @@ def main(iargs=None):
+                                                      disp_unit=inps.disp_unit,
+                                                      wrap=inps.wrap,
+                                                      wrap_range=inps.wrap_range)
++    # Added by Ollie, June 2021
++    # Quick way of changing the reference for a velocity field 
++    data -= inps.ref_subtract
+     if inps.wrap:
+         inps.vlim = inps.wrap_range
+ 
+diff --git a/mintpy/solid_earth_tides.py b/mintpy/solid_earth_tides.py
+index 75009e6..f9670f2 100755
+--- a/mintpy/solid_earth_tides.py
++++ b/mintpy/solid_earth_tides.py
+@@ -7,6 +7,9 @@
+ # Recomend import:
+ #   from mintpy import solid_earth_tides as SET
+ 
++# Modified by Ollie 03/06/21
++# To deal with an issue with CENTER_LINE_UTC variable
++
+ 
+ import os
+ import sys
+@@ -202,7 +205,7 @@ def get_datetime_list(ts_file, date_wise_acq_time=False):
+         utc_sec = dt.timedelta(seconds=float(atr['CENTER_LINE_UTC']))
+         sensingMid = [dt.datetime.strptime(i, '%Y%m%d') + utc_sec for i in date_list]
+ 
+-    return sensingMid
++    return sensingMid, atr['CENTER_LINE_UTC']
+ 
+ 
+ def plot_sensingMid_variation(sensingMid, save_fig=True, disp_fig=False, figsize=[8, 3]):
+@@ -256,7 +259,7 @@ def calc_solid_earth_tides_timeseries(ts_file, geom_file, set_file, date_wise_ac
+         ]
+ 
+     # prepare datetime
+-    dt_objs = get_datetime_list(ts_file, date_wise_acq_time=date_wise_acq_time)
++    dt_objs, center_line_utc = get_datetime_list(ts_file, date_wise_acq_time=date_wise_acq_time)
+ 
+     # initiate data matrix
+     num_date = len(dt_objs)
+@@ -303,6 +306,7 @@ def calc_solid_earth_tides_timeseries(ts_file, geom_file, set_file, date_wise_ac
+     ## output
+     # attribute
+     atr['FILE_TYPE'] = 'timeseries'
++    atr['CENTER_LINE_UTC'] = center_line_utc
+     atr['UNIT'] = 'm'
+     for key in ['REF_Y', 'REF_X', 'REF_DATE']:
+         if key in atr.keys():
+diff --git a/mintpy/timeseries2velocity.py b/mintpy/timeseries2velocity.py
+index c31fba8..ff17721 100755
+--- a/mintpy/timeseries2velocity.py
++++ b/mintpy/timeseries2velocity.py
+@@ -6,6 +6,8 @@
+ ############################################################
+ # Add bootstrap method for std. dev. estimation, Emre Havazli, May 2020.
+ # Add poly / periodic / step func., Yuan-Kai Liu, Aug 2020.
++# Added output of reconstructed time series, Ollie Stephenson, April 2021
++# Trying to add L1 norm for time series fitting, Ollie Stephenson, April 2021
+ 
+ 
+ import os
+@@ -20,6 +22,9 @@ from mintpy.objects import timeseries, giantTimeseries, HDFEOS, cluster
+ from mintpy.defaults.template import get_template_content
+ from mintpy.utils import arg_group, readfile, writefile, ptime, utils as ut
+ 
++# Added by Ollie for L1 solving 
++sys.path.append('/home/olstephe/apps/giant/GIAnT/solver')
++import iterL1
+ 
+ dataType = np.float32
+ # key configuration parameter name
+@@ -127,6 +132,12 @@ def create_parser():
+     # computing
+     parser = arg_group.add_memory_argument(parser)
+ 
++    # outputting reconstructed time series
++    # Added by Ollie 03/21
++    parser.add_argument('--recons', dest='recons_bool', default=False, help='output reconstructed time series.')
++    # norm
++    parser.add_argument('--norm', dest='norm', default='l2',help='norm used for time series fit. l2 (default) or l1.')
++
+     return parser
+ 
+ 
+@@ -332,7 +343,7 @@ def read_inps2model(inps):
+ 
+ 
+ ############################################################################
+-def estimate_time_func(date_list, dis_ts, model):
++def estimate_time_func(date_list, dis_ts, model,norm='l2'):
+     """
+     Deformation model estimator, using a suite of linear, periodic, step function(s).
+ 
+@@ -344,6 +355,7 @@ def estimate_time_func(date_list, dis_ts, model):
+                     {'polynomial' : 2,            # int, polynomial with 1 (linear), 2 (quadratic), 3 (cubic), etc.
+                      'periodic'   : [1.0, 0.5],   # list of float, period(s) in years. 1.0 (annual), 0.5 (semiannual), etc.
+                      'step'       : ['20061014'], # list of str, date(s) in YYYYMMDD.
++                norm      - norm to minimise for time series fit (L1 or L2)
+                      ...
+                      }
+     Returns:    G         - 2D np.ndarray, design matrix           in size of (num_date, num_par)
+@@ -353,12 +365,32 @@ def estimate_time_func(date_list, dis_ts, model):
+ 
+     G = timeseries.get_design_matrix4time_func(date_list, model)
+ 
+-    # least squares solver
+-    # Opt. 1: m = np.linalg.pinv(G).dot(dis_ts)
+-    # Opt. 2: m = scipy.linalg.lstsq(G, dis_ts, cond=1e-15)[0]
+-    # Numpy is not used because it can not handle NaN value in dis_ts
+-    m, e2 = linalg.lstsq(G, dis_ts)[:2]
+-
++    if norm=='l2':
++        # least squares solver
++        # Opt. 1: m = np.linalg.pinv(G).dot(dis_ts)
++        # Opt. 2: m = scipy.linalg.lstsq(G, dis_ts, cond=1e-15)[0]
++        # Numpy is not used because it can not handle NaN value in dis_ts
++        m, e2 = linalg.lstsq(G, dis_ts)[:2]
++    # Added by Ollie 03/13/21
++    elif norm=='l1':
++        print('L1 norm not outputting errors')
++        num_par = np.shape(G)[1]
++        num_pixel = np.shape(dis_ts)[1]
++        m = np.empty((num_par,num_pixel))
++        e2 = np.zeros((num_pixel,))
++        
++        for i in range(num_pixel):
++            sys.stdout.write("\rPercent complete: {:.2f}%".format((i+1)*100/num_pixel))
++            sys.stdout.flush()
++            m_i,C = iterL1.irls(G,dis_ts[:,i])
++            m[:,i] = m_i
++        # m,C = iterL1.irls(G,dis_ts)
++        
++        # L1 norm of residual
++        # TODO need to rewrite this, issue with dimensions 
++        # e2 = np.sum(np.abs(np.dot(G,m)-dis_ts))/np.shape(G)[0] # should divide by (num_dates - num params)? See iterL1 GIAnT function
++            
++    print('Block done')
+     return G, m, e2
+ 
+ 
+@@ -369,6 +401,7 @@ def run_timeseries2time_func(inps):
+     length, width = int(atr['LENGTH']), int(atr['WIDTH'])
+     num_date = inps.numDate
+     dates = np.array(inps.dateList)
++    norm = inps.norm #Added by Ollie
+ 
+     # get deformation model from parsers
+     model, num_param = read_inps2model(inps)
+@@ -394,7 +427,7 @@ def run_timeseries2time_func(inps):
+         atr[key_prefix+key] = str(vars(inps)[key])
+ 
+     # instantiate output file
+-    layout_hdf5(inps.outfile, atr, model)
++    layout_hdf5(inps, atr, model)
+ 
+ 
+     ## estimation
+@@ -489,7 +522,8 @@ def run_timeseries2time_func(inps):
+                 # estimation
+                 m_boot[i] = estimate_time_func(dates[boot_ind].tolist(),
+                                                ts_data[boot_ind],
+-                                               model)[1]
++                                               model,
++                                               norm=norm)[1]
+ 
+                 prog_bar.update(i+1, suffix='iteration {} / {}'.format(i+1, inps.bootstrapCount))
+             prog_bar.close()
+@@ -505,10 +539,14 @@ def run_timeseries2time_func(inps):
+         else:
+             ## option 2 - least squares with uncertainty propagation
+ 
+-            print('estimate time functions via linalg.lstsq ...')
++            if norm=='l2':
++                print('estimate time functions via linalg.lstsq ...')
++            elif norm=='l1':
++                print('estimate time functions via iterL1 ...')
+             G, m[:, mask], e2 = estimate_time_func(inps.dateList,
+                                                    ts_data,
+-                                                   model)
++                                                   model,
++                                                   norm=norm)
+             del ts_data
+ 
+             ## Compute the covariance matrix for model parameters: Gm = d
+@@ -529,19 +567,31 @@ def run_timeseries2time_func(inps):
+             # t_diff = G[:, 1] - np.mean(G[:, 1])
+             # vel_std = np.sqrt(np.sum(ts_diff ** 2, axis=0) / np.sum(t_diff ** 2)  / (num_date - 2))
+ 
++        # Added by Ollie 03/08/21
++        if inps.recons_bool:
++            recons = np.matmul(G,m)
++        else:
++            recons=None
++
+         # write
+         block = [box[1], box[3], box[0], box[2]]
+         write_hdf5_block(inps.outfile, model, m, m_std,
++                         num_date = inps.numDate,
++                         recons=recons,
+                          mask=mask,
+                          block=block)
+ 
+     return inps.outfile
+ 
+ 
+-def layout_hdf5(out_file, atr, model):
++def layout_hdf5(inps, atr, model):
+     """create HDF5 file for estimated time functions
+     with defined metadata and (empty) dataset structure
+     """
++    
++    # read inputs
++    out_file = inps.outfile
++    numDate = inps.numDate
+ 
+     # deformation model info
+     poly_deg = model['polynomial']
+@@ -600,6 +650,12 @@ def layout_hdf5(out_file, atr, model):
+         ds_name_dict[dsName+'Std'] = [dataType, (length, width), None]
+         ds_unit_dict[dsName+'Std'] = 'm'
+ 
++    # Added by Olle 03/08/21
++    if inps.recons_bool:
++        dsName = 'recons'
++        ds_name_dict[dsName] = [dataType, (numDate, length, width)]
++        ds_unit_dict[dsName] = 'm'
++
+     # layout hdf5
+     writefile.layout_hdf5(out_file, ds_name_dict, metadata=atr)
+ 
+@@ -615,8 +671,10 @@ def layout_hdf5(out_file, atr, model):
+     return out_file
+ 
+ 
+-def write_hdf5_block(out_file, model, m, m_std, mask=None, block=None):
++def write_hdf5_block(out_file, model, m, m_std, recons=None, num_date=None, mask=None, block=None):
+     """write the estimated time function parameters to file
++    Modified by Ollie 03/07/21 to output the reconstructed time series - added 'recons'
++    Note that this is different to the writefile.write_hdf5_block function 
+ 
+     Parameters: out_file - str, path of output time func file
+                 model    - dict, dict of time functions, e.g.:
+@@ -628,15 +686,28 @@ def write_hdf5_block(out_file, model, m, m_std, mask=None, block=None):
+                      ...
+                      }
+                 m/m_std  - 2D np.ndarray in float32 in size of (num_param, length*width), time func param. (Std. Dev.)
++                recons   - reconstructed time series (Gm)
++                num_date - number of dates in time series. Needed when writing recons
+                 mask     - 1D np.ndarray in float32 in size of (length*width), mask of valid pixels
+                 block    - list of 4 int, for [yStart, yEnd, xStart, xEnd]
+     """
+ 
+     def write_dataset_block(f, dsName, data, block):
+         print('write dataset /{:<20} block: {}'.format(dsName, block))
+-        f[dsName][block[0]:block[1], 
+-                  block[2]:block[3]] = data.reshape(block[1] - block[0],
+-                                                    block[3] - block[2])
++
++        if len(block) == 4:
++            f[dsName][block[0]:block[1], 
++                      block[2]:block[3]] = data.reshape(block[1] - block[0],
++                                                        block[3] - block[2])
++        # Added by Ollie 03/08/21
++        elif len(block) == 6:
++            f[dsName][block[0]:block[1], 
++                      block[2]:block[3],
++                      block[4]:block[5]] = data.reshape(block[1] - block[0],
++                                                        block[3] - block[2],
++                                                        block[5] - block[4])
++        else:
++            print('Wrong block dimensions')
+ 
+     # deformation model info
+     poly_deg = model['polynomial']
+@@ -718,6 +789,18 @@ def write_hdf5_block(out_file, model, m, m_std, mask=None, block=None):
+                                 data=m_std[p0+i, :],
+                                 block=block)
+ 
++        # Added by Ollie 03/08/21
++        if recons is not None:
++            # reconstructed time-series from model - 3D
++            dsName = 'recons'
++            block_3d = [0, num_date, block[0], block[1], block[2], block[3]]
++            # Use writefile function to write the time series 
++            write_dataset_block(f,
++                                dsName=dsName,
++                                data=recons,
++                                block=block_3d)
++            
++
+     print('close HDF5 file {}'.format(out_file))
+     return out_file
+ 

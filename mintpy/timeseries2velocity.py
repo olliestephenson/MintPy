@@ -6,6 +6,8 @@
 ############################################################
 # Add bootstrap method for std. dev. estimation, Emre Havazli, May 2020.
 # Add poly / periodic / step func., Yuan-Kai Liu, Aug 2020.
+# Added output of reconstructed time series, Ollie Stephenson, April 2021
+# Trying to add L1 norm for time series fitting, Ollie Stephenson, April 2021
 
 
 import os
@@ -20,6 +22,9 @@ from mintpy.objects import timeseries, giantTimeseries, HDFEOS, cluster
 from mintpy.defaults.template import get_template_content
 from mintpy.utils import arg_group, readfile, writefile, ptime, utils as ut
 
+# Added by Ollie for L1 solving 
+sys.path.append('/home/olstephe/apps/giant/GIAnT/solver')
+import iterL1
 
 dataType = np.float32
 # key configuration parameter name
@@ -126,6 +131,12 @@ def create_parser():
 
     # computing
     parser = arg_group.add_memory_argument(parser)
+
+    # outputting reconstructed time series
+    # Added by Ollie 03/21
+    parser.add_argument('--recons', dest='recons_bool', default=False, help='output reconstructed time series.')
+    # norm
+    parser.add_argument('--norm', dest='norm', default='l2',help='norm used for time series fit. l2 (default) or l1.')
 
     return parser
 
@@ -332,7 +343,7 @@ def read_inps2model(inps):
 
 
 ############################################################################
-def estimate_time_func(date_list, dis_ts, model):
+def estimate_time_func(date_list, dis_ts, model,norm='l2'):
     """
     Deformation model estimator, using a suite of linear, periodic, step function(s).
 
@@ -344,6 +355,7 @@ def estimate_time_func(date_list, dis_ts, model):
                     {'polynomial' : 2,            # int, polynomial with 1 (linear), 2 (quadratic), 3 (cubic), etc.
                      'periodic'   : [1.0, 0.5],   # list of float, period(s) in years. 1.0 (annual), 0.5 (semiannual), etc.
                      'step'       : ['20061014'], # list of str, date(s) in YYYYMMDD.
+                norm      - norm to minimise for time series fit (L1 or L2)
                      ...
                      }
     Returns:    G         - 2D np.ndarray, design matrix           in size of (num_date, num_par)
@@ -353,12 +365,32 @@ def estimate_time_func(date_list, dis_ts, model):
 
     G = timeseries.get_design_matrix4time_func(date_list, model)
 
-    # least squares solver
-    # Opt. 1: m = np.linalg.pinv(G).dot(dis_ts)
-    # Opt. 2: m = scipy.linalg.lstsq(G, dis_ts, cond=1e-15)[0]
-    # Numpy is not used because it can not handle NaN value in dis_ts
-    m, e2 = linalg.lstsq(G, dis_ts)[:2]
-
+    if norm=='l2':
+        # least squares solver
+        # Opt. 1: m = np.linalg.pinv(G).dot(dis_ts)
+        # Opt. 2: m = scipy.linalg.lstsq(G, dis_ts, cond=1e-15)[0]
+        # Numpy is not used because it can not handle NaN value in dis_ts
+        m, e2 = linalg.lstsq(G, dis_ts)[:2]
+    # Added by Ollie 03/13/21
+    elif norm=='l1':
+        print('L1 norm not outputting errors')
+        num_par = np.shape(G)[1]
+        num_pixel = np.shape(dis_ts)[1]
+        m = np.empty((num_par,num_pixel))
+        e2 = np.zeros((num_pixel,))
+        
+        for i in range(num_pixel):
+            sys.stdout.write("\rPercent complete: {:.2f}%".format((i+1)*100/num_pixel))
+            sys.stdout.flush()
+            m_i,C = iterL1.irls(G,dis_ts[:,i])
+            m[:,i] = m_i
+        # m,C = iterL1.irls(G,dis_ts)
+        
+        # L1 norm of residual
+        # TODO need to rewrite this, issue with dimensions 
+        # e2 = np.sum(np.abs(np.dot(G,m)-dis_ts))/np.shape(G)[0] # should divide by (num_dates - num params)? See iterL1 GIAnT function
+            
+    print('Block done')
     return G, m, e2
 
 
@@ -369,6 +401,7 @@ def run_timeseries2time_func(inps):
     length, width = int(atr['LENGTH']), int(atr['WIDTH'])
     num_date = inps.numDate
     dates = np.array(inps.dateList)
+    norm = inps.norm #Added by Ollie
 
     # get deformation model from parsers
     model, num_param = read_inps2model(inps)
@@ -394,7 +427,7 @@ def run_timeseries2time_func(inps):
         atr[key_prefix+key] = str(vars(inps)[key])
 
     # instantiate output file
-    layout_hdf5(inps.outfile, atr, model)
+    layout_hdf5(inps, atr, model)
 
 
     ## estimation
@@ -489,7 +522,8 @@ def run_timeseries2time_func(inps):
                 # estimation
                 m_boot[i] = estimate_time_func(dates[boot_ind].tolist(),
                                                ts_data[boot_ind],
-                                               model)[1]
+                                               model,
+                                               norm=norm)[1]
 
                 prog_bar.update(i+1, suffix='iteration {} / {}'.format(i+1, inps.bootstrapCount))
             prog_bar.close()
@@ -505,10 +539,14 @@ def run_timeseries2time_func(inps):
         else:
             ## option 2 - least squares with uncertainty propagation
 
-            print('estimate time functions via linalg.lstsq ...')
+            if norm=='l2':
+                print('estimate time functions via linalg.lstsq ...')
+            elif norm=='l1':
+                print('estimate time functions via iterL1 ...')
             G, m[:, mask], e2 = estimate_time_func(inps.dateList,
                                                    ts_data,
-                                                   model)
+                                                   model,
+                                                   norm=norm)
             del ts_data
 
             ## Compute the covariance matrix for model parameters: Gm = d
@@ -529,19 +567,31 @@ def run_timeseries2time_func(inps):
             # t_diff = G[:, 1] - np.mean(G[:, 1])
             # vel_std = np.sqrt(np.sum(ts_diff ** 2, axis=0) / np.sum(t_diff ** 2)  / (num_date - 2))
 
+        # Added by Ollie 03/08/21
+        if inps.recons_bool:
+            recons = np.matmul(G,m)
+        else:
+            recons=None
+
         # write
         block = [box[1], box[3], box[0], box[2]]
         write_hdf5_block(inps.outfile, model, m, m_std,
+                         num_date = inps.numDate,
+                         recons=recons,
                          mask=mask,
                          block=block)
 
     return inps.outfile
 
 
-def layout_hdf5(out_file, atr, model):
+def layout_hdf5(inps, atr, model):
     """create HDF5 file for estimated time functions
     with defined metadata and (empty) dataset structure
     """
+    
+    # read inputs
+    out_file = inps.outfile
+    numDate = inps.numDate
 
     # deformation model info
     poly_deg = model['polynomial']
@@ -600,6 +650,12 @@ def layout_hdf5(out_file, atr, model):
         ds_name_dict[dsName+'Std'] = [dataType, (length, width), None]
         ds_unit_dict[dsName+'Std'] = 'm'
 
+    # Added by Olle 03/08/21
+    if inps.recons_bool:
+        dsName = 'recons'
+        ds_name_dict[dsName] = [dataType, (numDate, length, width)]
+        ds_unit_dict[dsName] = 'm'
+
     # layout hdf5
     writefile.layout_hdf5(out_file, ds_name_dict, metadata=atr)
 
@@ -615,8 +671,10 @@ def layout_hdf5(out_file, atr, model):
     return out_file
 
 
-def write_hdf5_block(out_file, model, m, m_std, mask=None, block=None):
+def write_hdf5_block(out_file, model, m, m_std, recons=None, num_date=None, mask=None, block=None):
     """write the estimated time function parameters to file
+    Modified by Ollie 03/07/21 to output the reconstructed time series - added 'recons'
+    Note that this is different to the writefile.write_hdf5_block function 
 
     Parameters: out_file - str, path of output time func file
                 model    - dict, dict of time functions, e.g.:
@@ -628,15 +686,28 @@ def write_hdf5_block(out_file, model, m, m_std, mask=None, block=None):
                      ...
                      }
                 m/m_std  - 2D np.ndarray in float32 in size of (num_param, length*width), time func param. (Std. Dev.)
+                recons   - reconstructed time series (Gm)
+                num_date - number of dates in time series. Needed when writing recons
                 mask     - 1D np.ndarray in float32 in size of (length*width), mask of valid pixels
                 block    - list of 4 int, for [yStart, yEnd, xStart, xEnd]
     """
 
     def write_dataset_block(f, dsName, data, block):
         print('write dataset /{:<20} block: {}'.format(dsName, block))
-        f[dsName][block[0]:block[1], 
-                  block[2]:block[3]] = data.reshape(block[1] - block[0],
-                                                    block[3] - block[2])
+
+        if len(block) == 4:
+            f[dsName][block[0]:block[1], 
+                      block[2]:block[3]] = data.reshape(block[1] - block[0],
+                                                        block[3] - block[2])
+        # Added by Ollie 03/08/21
+        elif len(block) == 6:
+            f[dsName][block[0]:block[1], 
+                      block[2]:block[3],
+                      block[4]:block[5]] = data.reshape(block[1] - block[0],
+                                                        block[3] - block[2],
+                                                        block[5] - block[4])
+        else:
+            print('Wrong block dimensions')
 
     # deformation model info
     poly_deg = model['polynomial']
@@ -717,6 +788,18 @@ def write_hdf5_block(out_file, model, m, m_std, mask=None, block=None):
                                 dsName=dsName+'Std',
                                 data=m_std[p0+i, :],
                                 block=block)
+
+        # Added by Ollie 03/08/21
+        if recons is not None:
+            # reconstructed time-series from model - 3D
+            dsName = 'recons'
+            block_3d = [0, num_date, block[0], block[1], block[2], block[3]]
+            # Use writefile function to write the time series 
+            write_dataset_block(f,
+                                dsName=dsName,
+                                data=recons,
+                                block=block_3d)
+            
 
     print('close HDF5 file {}'.format(out_file))
     return out_file
