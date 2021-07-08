@@ -44,7 +44,7 @@ Relevant literature:
 
 #### Envisat of the 2008 Wells earthquake with Gamma ####
 
-Area: Wells, Nevada, USA       
+Area: Wells, Nevada, USA ([USGS event page](https://earthquake.usgs.gov/earthquakes/eventpage/nn00234425/executive))       
 Data: Envisat ASAR descending track 399 during July 2007 - September 2008 (11 acquisitions; [Zenodo](https://zenodo.org/record/3952950))      
 Size: ~280 MB      
 
@@ -61,7 +61,7 @@ smallbaselineApp.py ${MINTPY_HOME}/mintpy/data/input_files/WellsEnvD2T399.txt
 
 Relevant literature:
 
-+ Nealy, J. L., H. M. Benz, G. P. Hayes, E. A. Bergman, and W. D. Barnhart (2017), The 2008 Wells, Nevada, Earthquake Sequence: Source Constraints Using Calibrated Multiple‐Event Relocation and InSARThe 2008 Wells, Nevada, Earthquake Sequence: Source Constraints Using Calibrated Multiple‐Event Relocation, _Bulletin of the Seismological Society of America_, 107(3), 1107-1117, doi:10.1785/0120160298.
++ Nealy, J. L., H. M. Benz, G. P. Hayes, E. A. Bergman, and W. D. Barnhart (2017), The 2008 Wells, Nevada, Earthquake Sequence: Source Constraints Using Calibrated Multiple‐Event Relocation and InSAR, _Bulletin of the Seismological Society of America_, 107(3), 1107-1117, doi:10.1785/0120160298.
 
 #### Sentinel-1 on Western Cape, South Africa with SNAP ####
 
@@ -76,10 +76,10 @@ cd WCapeSenAT29
 smallbaselineApp.py ${MINTPY_HOME}/mintpy/data/input_files/WCapeSenAT29.txt
 ```
 
-#### ALOS-1 on Kuju with ROI_PAC ####
+#### ALOS on Kuju with ROI_PAC ####
 
 Area: Kuju volcano at Kyushu island, SW Japan     
-Data: ALOS-1 PALSAR ascending track 422 during January 2007 - January 2011 (24 acquisitions; [Zenodo](https://zenodo.org/record/3952917))     
+Data: ALOS PALSAR ascending track 422 during January 2007 - January 2011 (24 acquisitions; [Zenodo](https://zenodo.org/record/3952917))     
 Size: ~240 MB
 
 ```bash

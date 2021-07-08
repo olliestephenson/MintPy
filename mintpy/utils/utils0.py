@@ -20,7 +20,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import ndimage
-
+from pyproj import Proj, Transformer
 
 # global variables
 SPEED_OF_LIGHT = 299792458 # m/s
@@ -232,6 +232,35 @@ def touch(fname_list, times=None):
 
 
 #################################### Geometry ##########################################
+def to_latlon(infile, x, y):
+    """Convert x, y in the projection coordinates of the file to lon/lat in degree.
+
+    Similar functionality also exists in utm.to_latlon() at:
+        https://github.com/Turbo87/utm#utm-to-latitudelongitude
+
+    Parameters: infile - str, GDAL supported file path
+                x/y    - scalar or 1/2D np.ndarray, coordiantes in x and y direction
+    Returns:    y/x    - scalar or 1/2D np.ndarray, coordinates in latitutde and longitude
+    """
+    from osgeo import gdal
+
+    # read projection info using gdal
+    ds = gdal.Open(infile)
+    srs = ds.GetSpatialRef()
+
+    # if input file is already in lat/lon, do nothing and return
+    if (not srs.IsProjected()) and (srs.GetAttrValue('unit') == 'degree'):
+        return y, x
+
+    # convert coordiantes using pyproj
+    # note that Transform.from_proj(x, y, always_xy=True) convert the x, y to lon, lat
+    p_in = Proj(ds.GetProjection())
+    p_out = Proj('epsg:4326')
+    transformer = Transformer.from_proj(p_in, p_out)
+    y, x = transformer.transform(x, y)
+    return y, x
+
+
 def get_lat_lon(meta, geom_file=None, box=None, dimension=2):
     """Extract precise pixel-wise lat/lon.
 
@@ -330,36 +359,54 @@ def azimuth2heading_angle(az_angle):
         ascending  orbit: heading angle of -12  and azimuth angle of 102
         descending orbit: heading angle of -168 and azimuth angle of -102
     """
-
-    head_angle = -1 * (180 + az_angle + 90)
+    head_angle = 90 - az_angle
     head_angle -= np.round(head_angle / 360.) * 360.
     return head_angle
 
 
-def enu2los(e, n, u, inc_angle=34., head_angle=-168.):
+def heading2azimuth_angle(head_angle):
+    """Convert satellite orbit heading angle into azimuth angle as defined in ISCE-2."""
+    az_angle = 90 - head_angle
+    az_angle -= np.round(az_angle / 360.) * 360.
+    return az_angle
+
+
+def enu2los(e, n, u, inc_angle, head_angle=None, az_angle=None):
     """
-    Parameters: e          - np.array or float, displacement in east-west direction, east as positive
-                n          - np.array or float, displacement in north-south direction, north as positive
-                u          - np.array or float, displacement in vertical direction, up as positive
-                inc_angle  - np.array or float, local incidence angle from vertical
-                head_angle - np.array or float, satellite orbit from the north in clock-wise direction as positive
-    Returns:    v_los      - np.array or float, displacement in line-of-sight direction, moving toward satellite as positive
+    Parameters: e          - np.ndarray or float, displacement in east-west direction, east as positive
+                n          - np.ndarray or float, displacement in north-south direction, north as positive
+                u          - np.ndarray or float, displacement in vertical direction, up as positive
+                inc_angle  - np.ndarray or float, local incidence angle from vertical
+                head_angle - np.ndarray or float, azimuth angle of the SAR platform along track direction
+                             measured from the north with clockwise direction as positive in the unit of degrees
+                az_angle   - np.ndarray or float, azimuth angle of the LOS vector from the ground to the SAR platform
+                             measured from the north with anti-clockwise direction as positive in the unit of degrees
+                             head_angle = 90 - az_angle
+    Returns:    v_los      - np.ndarray or float, displacement in line-of-sight direction, moving toward satellite as positive
 
     Typical values in deg for satellites with near-polar orbit:
         For AlosA: inc_angle = 34, head_angle = -12.9,  az_angle = 102.9
-        For AlosD: inc_angle = 34, head_angle = -167.2, az_angle = -12.8
-        For  SenD: inc_angle = 34, head_angle = -168.0, az_angle = -102
+        For AlosD: inc_angle = 34, head_angle = -167.2, az_angle = -102.8
+        For  SenD: inc_angle = 34, head_angle = -168.0, az_angle = -102.0
     """
-    # if input angle is azimuth angle
-    if np.abs(np.abs(head_angle) - 90) < 30:
-        head_angle = azimuth2heading_angle(head_angle)
+    ## if input angle is azimuth angle
+    #if np.abs(np.abs(head_angle) - 90) < 30:
+    #    head_angle = azimuth2heading_angle(head_angle)
+    if az_angle is None:
+        # head_angle -> az_angle
+        if head_angle is not None:
+            az_angle = heading2azimuth_angle(head_angle)
+    if az_angle is None:
+        raise ValueError('az_angle can not be None!')
 
     inc_angle *= np.pi/180.
-    head_angle *= np.pi/180.
-    v_los = (  e * np.sin(inc_angle) * np.cos(head_angle) * -1
-             + n * np.sin(inc_angle) * np.sin(head_angle) 
+    az_angle *= np.pi/180.
+    v_los = (  e * np.sin(inc_angle) * np.sin(az_angle) * -1
+             + n * np.sin(inc_angle) * np.cos(az_angle)
              + u * np.cos(inc_angle))
+
     return v_los
+
 
 def four_corners(atr):
     """Return 4 corners lat/lon"""
@@ -541,6 +588,23 @@ def interpolate_data(inData, outShape, interpMethod='linear'):
     return outData
 
 
+def polygon2mask(polygon, shape):
+    """Create a 2D mask (numpy array in binary) from a polygon.
+
+    Link: https://stackoverflow.com/questions/3654289/scipy-create-2d-polygon-mask
+    Parameters: polygon - list of tuples of 2 int, e.g. [(x1, y1), (x2, y2), ...]
+                shape   - list/tuple of 2 int, for length and width
+    Returns:    mask    - 2D np.ndarray in bool in size of (length, width)
+    """
+    from PIL import Image, ImageDraw
+    length, width = shape
+
+    img = Image.new('L', (width, length), 0)
+    ImageDraw.Draw(img).polygon(polygon, outline=1, fill=1)
+    mask = np.array(img, dtype=np.bool_)
+
+    return mask
+
 
 
 #################################### User Interaction #####################################
@@ -588,6 +652,7 @@ def which(program):
 
 def check_parallel(file_num=1, print_msg=True, maxParallelNum=8):
     """Check parallel option based file num and installed module
+    Link: https://joblib.readthedocs.io/en/latest/parallel.html
     Examples:
         num_cores, inps.parallel, Parallel, delayed = ut.check_parallel(len(file_list))
         Parallel(n_jobs=num_cores)(delayed(subset_file)(file, vars(inps)) for file in file_list)

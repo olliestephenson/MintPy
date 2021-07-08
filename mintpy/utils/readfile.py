@@ -8,6 +8,7 @@
 
 
 import os
+import sys
 import re
 import warnings
 import defusedxml.ElementTree as ET
@@ -46,8 +47,8 @@ standardMetadataKeys = {
     'PLATFORM'           : ['spacecraftName', 'sensor'],
     'POLARIZATION'       : ['polarization'],
     'PRF'                : ['prf'],
-    'STARTING_RANGE'     : ['startingRange', 'near_range_slc'],
-    'WAVELENGTH'         : ['wavelength', 'Wavelength', 'radarWavelength'],
+    'STARTING_RANGE'     : ['startingRange', 'near_range_slc', 'near_range'],
+    'WAVELENGTH'         : ['wavelength', 'Wavelength', 'radarWavelength', 'radar_wavelength'],
     'WIDTH'              : ['width', 'Width', 'samples', 'range_samp', 'interferogram_width'],
     # from PySAR [MintPy<=1.1.1]
     'REF_DATE'           : ['ref_date'],
@@ -223,7 +224,8 @@ def read(fname, box=None, datasetName=None, print_msg=True, xstep=1, ystep=1):
                               datasetName=datasetName,
                               box=box,
                               xstep=xstep,
-                              ystep=ystep)
+                              ystep=ystep,
+                              print_msg=print_msg)
 
     else:
         data, atr = read_binary_file(fname,
@@ -235,7 +237,7 @@ def read(fname, box=None, datasetName=None, print_msg=True, xstep=1, ystep=1):
 
 
 #########################################################################
-def read_hdf5_file(fname, datasetName=None, box=None, xstep=1, ystep=1):
+def read_hdf5_file(fname, datasetName=None, box=None, xstep=1, ystep=1, print_msg=True):
     """
     Parameters: fname       : str, name of HDF5 file to read
                 datasetName : str or list of str, dataset name in root level with/without date info
@@ -338,12 +340,21 @@ def read_hdf5_file(fname, datasetName=None, box=None, xstep=1, ystep=1):
 
                 inds = np.where(slice_flag)[0]
                 for i in range(num_slice):
+                    # print out msg
+                    if print_msg:
+                        sys.stdout.write('\r' + f'reading slice {i+1}/{num_slice}...')
+                        sys.stdout.flush()
+
+                    # read and index
                     d2 = ds[inds[i],
                             box[1]:box[3],
                             box[0]:box[2]]
                     d2 = d2[int(ystep/2)::ystep,
                             int(xstep/2)::xstep]
                     data[i, :, :] = d2[:ysize, :xsize]
+
+                if print_msg:
+                    print('')
 
             if any(i == 1 for i in data.shape):
                 data = np.squeeze(data)
@@ -403,7 +414,7 @@ def read_binary_file(fname, datasetName=None, box=None, xstep=1, ystep=1):
         elif k in ['slc']:
             cpx_band = 'magnitude'
 
-        elif k in ['los'] and datasetName and datasetName.startswith(('band2','az','head')):
+        elif k.startswith('los') and datasetName and datasetName.startswith(('band2','az','head')):
             band = min(2, num_band)
 
         elif k in ['incLocal']:
@@ -416,6 +427,7 @@ def read_binary_file(fname, datasetName=None, box=None, xstep=1, ystep=1):
                 band = 2
             elif datasetName.lower() == 'band3':
                 band = 3
+
             elif datasetName.startswith(('mag', 'amp')):
                 cpx_band = 'magnitude'
             elif datasetName in ['phase', 'angle']:
@@ -424,8 +436,14 @@ def read_binary_file(fname, datasetName=None, box=None, xstep=1, ystep=1):
                 cpx_band = 'real'
             elif datasetName.lower().startswith('imag'):
                 cpx_band = 'imag'
-            elif datasetName .startswith(('cpx', 'complex')):
+            elif datasetName.startswith(('cpx', 'complex')):
                 cpx_band = 'complex'
+
+            else:
+                # flexible band list
+                ds_list = get_slice_list(fname)
+                if datasetName in ds_list:
+                    band = ds_list.index(datasetName) + 1
 
         band = min(band, num_band)
 
@@ -500,15 +518,15 @@ def read_binary_file(fname, datasetName=None, box=None, xstep=1, ystep=1):
         if 'byte order' in atr.keys() and atr['byte order'] == '0':
             byte_order = 'little-endian'
 
-    # gdal (e.g. GACOS TIF files or HyP3 TIF files)
-    elif processor in ['gdal','hyp3']:
+    # GDAL / GMTSAR / ASF HyP3
+    elif processor in ['gdal', 'gmtsar', 'hyp3']:
         pass
 
     else:
         print('Unknown InSAR processor: {}'.format(processor))
 
     # reading
-    if processor in ['gdal','hyp3']:
+    if processor in ['gdal', 'gmtsar', 'hyp3']:
         data = read_gdal(
             fname,
             box=box,
@@ -612,11 +630,14 @@ def get_slice_list(fname):
             # mag / pha / cpx reading like "multiple bands"
             slice_list = ['magnitude', 'phase']
 
-        elif os.path.basename(fname) == 'offset.bip' and num_band == 2:
+        elif fbase.startswith('offset') and fext in ['.bip'] and num_band == 2:
             slice_list = ['azimuthOffset', 'rangeOffset']
 
+        elif fbase.startswith('offset') and fname.endswith('cov.bip') and num_band == 3:
+            slice_list = ['azimuthOffsetVar', 'rangeOffsetVar', 'offsetCovar']
+
         else:
-            slice_list = ['band{}'.format(i) for i in range(1,num_band+1)]
+            slice_list = ['band{}'.format(i+1) for i in range(num_band)]
 
     return slice_list
 
@@ -626,8 +647,7 @@ def get_dataset_list(fname, datasetName=None):
     if datasetName:
         return [datasetName]
 
-    fbase, fext = os.path.splitext(os.path.basename(fname))
-    fext = fext.lower()
+    fext = os.path.splitext(fname)[1].lower()
 
     global ds_list
     if fext in ['.h5', '.he5']:
@@ -642,12 +662,9 @@ def get_dataset_list(fname, datasetName=None):
         with h5py.File(fname, 'r') as f:
             f.visititems(get_hdf5_dataset)
 
-    elif fext in ['.trans', '.utm_to_rdc']:
-        ds_list = ['rangeCoord', 'azimuthCoord']
-    elif fbase.startswith('los'):
-        ds_list = ['incidenceAngle', 'azimuthAngle']
     else:
-        ds_list = [os.path.splitext(fbase)[0]]
+        ds_list = get_slice_list(fname)
+
     return ds_list
 
 
@@ -720,9 +737,15 @@ def read_attribute(fname, datasetName=None, metafile_ext=None):
             atr = giantTimeseries(fname).get_metadata()
         elif k == 'giantIfgramStack':
             atr = giantIfgramStack(fname).get_metadata()
+
         elif len(atr) > 0 and 'WIDTH' in atr.keys():
-            # use the attribute at root level
-            pass
+            # use the attribute at root level, which is already read from the begining
+
+            # grab attribute of dataset if specified, e.g. UNIT, no-data value, etc.
+            if datasetName and datasetName in d1_list:
+                with h5py.File(fname, 'r') as f:
+                    atr.update(dict(f[datasetName].attrs))
+
         else:
             # otherwise, grab the list of attrs in HDF5 file
             # and use the attrs with most items
@@ -822,6 +845,12 @@ def read_attribute(fname, datasetName=None, metafile_ext=None):
             fname + '.aux.xml',
         ]
         metafiles = [i for i in metafiles if os.path.isfile(i)]
+
+        # use metadata files with the specified extension if requested
+        if metafile_ext:
+            metafiles = [i for i in metafiles if i.endswith(metafile_ext)]
+
+        # use the GDAL supported data file is no metadata file found
         if len(metafiles) == 0:
             # for .tif/.grd files, extract metadata from the file itself
             if fext in GDAL_FILE_EXTS:
@@ -858,7 +887,7 @@ def read_attribute(fname, datasetName=None, metafile_ext=None):
         meta_ext = os.path.splitext(metafile)[1]
 
         # ignore certain meaningless file extensions
-        while fext in ['.geo', '.rdr', '.full', '.wgs84']:
+        while fext in ['.geo', '.rdr', '.full', '.wgs84', '.grd']:
             fbase, fext = os.path.splitext(fbase)
         if not fext:
             fext = fbase
@@ -1111,114 +1140,8 @@ def read_gamma_par(fname, delimiter=':', skiprows=3):
     return parDict
 
 
-def read_isce_xml(fname):
-    """Read ISCE .xml file into a python dict structure."""
-    root = ET.parse(fname).getroot()
-    xmlDict = {}
-
-    # imageFile, e.g. filt_fine.unw.xml
-    if root.tag.startswith('image'):
-        for child in root.findall('property'):
-            key = child.get('name')
-            value = child.find('value').text
-            xmlDict[key] = value
-
-        # Read lat/lon info for geocoded file
-        # in form: root/component coordinate*/property name/value
-        for coord_name, prefix in zip(['coordinate1', 'coordinate2'], ['X', 'Y']):
-            child = root.find("./component[@name='{}']".format(coord_name))
-            v_step  = float(child.find("./property[@name='delta']").find('value').text)
-            v_first = float(child.find("./property[@name='startingvalue']").find('value').text)
-            if abs(v_step) < 1. and abs(v_step) > 1e-7:
-                xmlDict['{}_STEP'.format(prefix)] = v_step
-                xmlDict['{}_FIRST'.format(prefix)] = v_first - v_step / 2.
-
-    # PAMDataset, e.g. hgt.rdr.aux.xml
-    elif root.tag == 'PAMDataset':
-        meta = root.find("./Metadata[@domain='ENVI']")
-        for child in meta.findall("MDI"):
-            key = child.get('key')
-            value = child.text
-            xmlDict[key] = value
-        xmlDict['data_type'] = ENVI2NUMPY_DATATYPE[xmlDict['data_type']]
-
-    xmlDict = standardize_metadata(xmlDict)
-
-    return xmlDict
-
-
-def read_envi_hdr(fname):
-    """Read ENVI .hdr file into a python dict structure"""
-    atr = read_template(fname, delimiter='=')
-    atr['DATA_TYPE'] = ENVI2NUMPY_DATATYPE[atr.get('data type', '4')]
-    atr['BYTE_ORDER'] = ENVI_BYTE_ORDER[atr.get('byte order', '1')]
-
-    if 'map info' in atr.keys():
-        map_info = [i.replace('{','').replace('}','').strip() for i in atr['map info'].split(',')]
-        x_step = abs(float(map_info[5]))
-        y_step = abs(float(map_info[6])) * -1.
-        #unit = map_info[-1].replace('}','').split('=')[1].lower()
-
-        if abs(x_step) < 1. and abs(x_step) > 1e-7:
-            atr['X_FIRST'] = str(float(map_info[3]) - x_step / 2.)
-            atr['Y_FIRST'] = str(float(map_info[4]) - y_step / 2.)
-            atr['X_STEP'] = str(x_step)
-            atr['Y_STEP'] = str(y_step)
-            atr['X_UNIT'] = 'degrees'
-            atr['Y_UNIT'] = 'degrees'
-
-    atr = standardize_metadata(atr)
-
-    return atr
-
-
-def read_gdal_vrt(fname):
-    """Read GDAL .vrt file into a python dict structure using gdal
-
-    Modified from $ISCE_HOME/applications/gdal2isce_xml.gdal2isce_xml() written by David Bekaert.
-    """
-    try:
-        from osgeo import gdal
-    except ImportError:
-        raise ImportError('Cannot import gdal!')
-
-    # read dataset using gdal
-    ds = gdal.Open(fname, gdal.GA_ReadOnly)
-
-    atr = {}
-    atr['WIDTH']  = ds.RasterXSize
-    atr['LENGTH'] = ds.RasterYSize
-    atr['number_bands'] = ds.RasterCount
-
-    # data type
-    data_type = ds.GetRasterBand(1).DataType
-    atr['DATA_TYPE'] = GDAL2ISCE_DATATYPE[data_type]
-
-    # interleave
-    scheme = ds.GetMetadata('IMAGE_STRUCTURE').get('INTERLEAVE', 'PIXEL')
-    atr['scheme'] = ENVI_BAND_INTERLEAVE[scheme]
-
-    # transformation contains gridcorners
-    # (lines/pixels or lonlat and the spacing 1/-1 or deltalon/deltalat)
-    transform = ds.GetGeoTransform()
-    x0 = transform[0]
-    y0 = transform[3]
-    x_step = abs(transform[1])
-    y_step = abs(transform[5]) * -1.
-
-    if abs(x_step) < 1. and abs(x_step) > 1e-7:
-        atr['X_FIRST'] = x0 - x_step / 2.
-        atr['Y_FIRST'] = y0 - y_step / 2.
-        atr['X_STEP'] = x_step
-        atr['Y_STEP'] = y_step
-
-    atr = standardize_metadata(atr)
-
-    return atr
-
-
 def attribute_gamma2roipac(par_dict_in):
-    """Convert Gamma metadata into ROI_PAC/MintPy format (for metadata with different values)."""
+    """Convert Gamma metadata into ROI_PAC/MintPy format."""
     par_dict = dict()
     for key, value in iter(par_dict_in.items()):
         par_dict[key] = value
@@ -1279,6 +1202,192 @@ def attribute_gamma2roipac(par_dict_in):
             par_dict['ANTENNA_SIDE'] = '1'
 
     return par_dict
+
+
+def read_isce_xml(fname):
+    """Read ISCE .xml file into a python dict structure."""
+    root = ET.parse(fname).getroot()
+    xmlDict = {}
+
+    # imageFile, e.g. filt_fine.unw.xml
+    if root.tag.startswith('image'):
+        for child in root.findall('property'):
+            key = child.get('name')
+            value = child.find('value').text
+            xmlDict[key] = value
+
+        # Read lat/lon info for geocoded file
+        # in form: root/component coordinate*/property name/value
+        for coord_name, prefix in zip(['coordinate1', 'coordinate2'], ['X', 'Y']):
+            child = root.find("./component[@name='{}']".format(coord_name))
+            v_step  = float(child.find("./property[@name='delta']").find('value').text)
+            v_first = float(child.find("./property[@name='startingvalue']").find('value').text)
+            if abs(v_step) < 1. and abs(v_step) > 1e-7:
+                xmlDict['{}_STEP'.format(prefix)] = v_step
+                xmlDict['{}_FIRST'.format(prefix)] = v_first - v_step / 2.
+                xmlDict['{}_UNIT'.format(prefix)] = 'degrees'
+
+    # PAMDataset, e.g. hgt.rdr.aux.xml
+    elif root.tag == 'PAMDataset':
+        meta = root.find("./Metadata[@domain='ENVI']")
+        for child in meta.findall("MDI"):
+            key = child.get('key')
+            value = child.text
+            xmlDict[key] = value
+        xmlDict['data_type'] = ENVI2NUMPY_DATATYPE[xmlDict['data_type']]
+
+    xmlDict = standardize_metadata(xmlDict)
+
+    return xmlDict
+
+
+def read_envi_hdr(fname):
+    """Read ENVI .hdr file into a python dict structure"""
+    atr = read_template(fname, delimiter='=')
+    atr['DATA_TYPE'] = ENVI2NUMPY_DATATYPE[atr.get('data type', '4')]
+    atr['BYTE_ORDER'] = ENVI_BYTE_ORDER[atr.get('byte order', '1')]
+
+    if 'map info' in atr.keys():
+        map_info = [i.replace('{','').replace('}','').strip() for i in atr['map info'].split(',')]
+        x_step = abs(float(map_info[5]))
+        y_step = abs(float(map_info[6])) * -1.
+        #unit = map_info[-1].replace('}','').split('=')[1].lower()
+
+        if abs(x_step) < 1. and abs(x_step) > 1e-7:
+            atr['X_UNIT'] = 'degrees'
+            atr['Y_UNIT'] = 'degrees'
+            atr['X_STEP'] = str(x_step)
+            atr['Y_STEP'] = str(y_step)
+            atr['X_FIRST'] = str(float(map_info[3]) - x_step / 2.)
+            atr['Y_FIRST'] = str(float(map_info[4]) - y_step / 2.)
+
+    atr = standardize_metadata(atr)
+
+    return atr
+
+
+def read_gdal_vrt(fname):
+    """Read GDAL .vrt file into a python dict structure using gdal
+
+    Modified from $ISCE_HOME/applications/gdal2isce_xml.gdal2isce_xml() written by David Bekaert.
+    """
+    try:
+        from osgeo import gdal, osr
+    except ImportError:
+        raise ImportError('Cannot import gdal and osr!')
+
+    # read dataset using gdal
+    ds = gdal.Open(fname, gdal.GA_ReadOnly)
+
+    atr = {}
+    atr['WIDTH']  = ds.RasterXSize
+    atr['LENGTH'] = ds.RasterYSize
+    atr['number_bands'] = ds.RasterCount
+
+    # data type
+    data_type = ds.GetRasterBand(1).DataType
+    atr['DATA_TYPE'] = GDAL2ISCE_DATATYPE[data_type]
+
+    # interleave
+    scheme = ds.GetMetadata('IMAGE_STRUCTURE').get('INTERLEAVE', 'PIXEL')
+    atr['scheme'] = ENVI_BAND_INTERLEAVE[scheme]
+
+    # transformation contains gridcorners
+    # (lines/pixels or lonlat and the spacing 1/-1 or deltalon/deltalat)
+    transform = ds.GetGeoTransform()
+    x0 = transform[0]
+    y0 = transform[3]
+    x_step = abs(transform[1])
+    y_step = abs(transform[5]) * -1.
+
+    atr['X_STEP'] = x_step
+    atr['Y_STEP'] = y_step
+    atr['X_FIRST'] = x0 - x_step / 2.
+    atr['Y_FIRST'] = y0 - y_step / 2.
+
+    # projection / coordinate unit
+    srs = osr.SpatialReference(wkt=ds.GetProjection())
+    srs_name = srs.GetName()
+    if 'UTM' in srs_name:
+        atr['UTM_ZONE'] = srs_name.split('UTM zone')[-1].strip()
+        atr['X_UNIT'] = 'meters'
+        atr['Y_UNIT'] = 'meters'
+
+    elif abs(x_step) < 1. and abs(x_step) > 1e-7:
+        atr['X_UNIT'] = 'degrees'
+        atr['Y_UNIT'] = 'degrees'
+        # constrain longitude within (-180, 180]
+        if atr['X_FIRST'] > 180.:
+            atr['X_FIRST'] -= 360.
+
+    atr = standardize_metadata(atr)
+
+    return atr
+
+
+def read_gmtsar_prm(fname, delimiter='='):
+    """Read GMTSAR .prm file into a python dict structure.
+    Parameters: fname : str.
+                    File path of .rsc file.
+    Returns:    prmDict : dict
+                    Dictionary of keys and values in the PRM file.
+    """
+    # read .prm file
+    with open(fname, 'r') as f:
+        lines = f.readlines()
+
+    # convert list of str into dict
+    prmDict = {}
+    for line in lines:
+        c = [i.strip() for i in line.strip().replace('\t',' ').split(delimiter, 1)]
+        key = c[0]
+        value = c[1].replace('\n', '').strip()
+        prmDict[key] = value
+
+    prmDict = attribute_gmtsar2roipac(prmDict)
+    prmDict = standardize_metadata(prmDict)
+
+    return prmDict
+
+
+def attribute_gmtsar2roipac(prm_dict_in):
+    """Convert GMTSAR metadata into ROI_PAC/MintPy format (for metadata with different values)."""
+    prm_dict = dict()
+    for key, value in iter(prm_dict_in.items()):
+        prm_dict[key] = value
+
+    # lookdir -> ANTENNA_SIDE
+    key = 'lookdir'
+    if key in prm_dict_in.keys():
+        value = prm_dict[key]
+        if value.upper() == 'R':
+            prm_dict['ANTENNA_SIDE'] = '-1'
+        else:
+            prm_dict['ANTENNA_SIDE'] = '1'
+
+    # SC_vel -> AZIMUTH_PIXEL_SIZE (in single look)
+    key = 'SC_vel'
+    if key in prm_dict_in.keys():
+        vel = float(prm_dict[key])
+        Re = float(prm_dict['earth_radius'])
+        PRF = float(prm_dict['PRF'])
+        height = float(prm_dict['SC_height'])
+        az_pixel_size = vel / PRF * Re / (Re + height)
+        prm_dict['AZIMUTH_PIXEL_SIZE'] = az_pixel_size
+
+    # rng_samp_rate -> RANGE_PIXEL_SIZE (in single look)
+    key = 'rng_samp_rate'
+    if key in prm_dict_in.keys():
+        value = float(prm_dict[key])
+        prm_dict['RANGE_PIXEL_SIZE'] = SPEED_OF_LIGHT / value / 2.0
+
+    # SC_clock_start/stop -> CENTER_LINE_TUC
+    dt_center = (float(prm_dict['SC_clock_start']) + float(prm_dict['SC_clock_stop'])) / 2.0
+    t_center = dt_center - int(dt_center)
+    prm_dict['CENTER_LINE_UTC'] = str(t_center * 24. * 60. * 60.)
+
+    return prm_dict
+
 
 
 #########################################################################

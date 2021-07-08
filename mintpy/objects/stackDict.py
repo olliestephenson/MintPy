@@ -378,15 +378,21 @@ class geometryDict:
             return None
 
         if 'Y_FIRST' in self.extraMetadata.keys():
-            # for dataset in geo-coordinates, use contant value from SLANT_RANGE_DISTANCE.
+            # for dataset in geo-coordinates, use:
+            # 1) incidenceAngle matrix if available OR
+            # 2) contant value from SLANT_RANGE_DISTANCE.
+            ds_name = 'incidenceAngle'
             key = 'SLANT_RANGE_DISTANCE'
-            print('geocoded input, use contant value from metadata {}'.format(key))
-            if key in self.extraMetadata.keys():
+            if ds_name in self.dsNames:
+                print('geocoded input, use incidenceAngle from file {}'.format(self.datasetDict[ds_name]))
+                inc_angle = self.read(family=ds_name)[0].astype(np.float32)
+                data = ut.incidence_angle2slant_range_distance(self.extraMetadata, inc_angle)
+            elif key in self.extraMetadata.keys():
+                print('geocoded input, use contant value from metadata {}'.format(key))
                 length = int(self.extraMetadata['LENGTH'])
                 width = int(self.extraMetadata['WIDTH'])
                 range_dist = float(self.extraMetadata[key])
                 data = np.ones((length, width), dtype=np.float32) * range_dist
-
             else:
                 return None
 
@@ -617,6 +623,13 @@ class geometryDict:
                     elif dsName == 'azimuthCoord' and ystep != 1:
                         print('    scale value of {:<15} by 1/{} due to multilooking'.format(dsName, ystep))
                         data /= ystep
+
+                    elif dsName == 'incidenceAngle':
+                        atr = readfile.read_attribute(self.file)
+                        if (atr.get('PROCESSOR', 'isce') == 'hyp3'
+                                and atr.get('UNIT', 'degrees').startswith('rad')):
+                            print('    convert the unit of {:<15} from radian to degree'.format(dsName))
+                            data *= 180. / np.pi
 
                     # write
                     ds = f.create_dataset(dsName,

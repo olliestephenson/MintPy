@@ -148,12 +148,14 @@ def read_template_file2inps(template_file, inps=None):
     if key in template.keys():
         value = template[key]
         if value:
+            value = value.replace('[','').replace(']','')
             inps.ref_y, inps.ref_x = [int(i) for i in value.split(',')]
 
     key = prefix+'lalo'
     if key in template.keys():
         value = template[key]
         if value:
+            value = value.replace('[','').replace(']','')
             inps.ref_lat, inps.ref_lon = [float(i) for i in value.split(',')]
 
     return inps
@@ -432,7 +434,7 @@ def read_reference_input(inps):
             raise ValueError('input reference point is OUT of data coverage!')
 
         # Do not use ref_y/x in masked out area
-        if inps.maskFile:
+        if inps.maskFile and os.path.isfile(inps.maskFile):
             print('mask: '+inps.maskFile)
             mask = readfile.read(inps.maskFile, datasetName='mask')[0]
             if mask[inps.ref_y, inps.ref_x] == 0:

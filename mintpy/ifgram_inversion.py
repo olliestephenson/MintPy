@@ -189,6 +189,9 @@ def cmd_line_parse(iargs=None):
         elif inps.obsDatasetName.startswith('rangeOffset'):
             inps.outfile = ['timeseriesRg.h5', 'residualInvRg.h5', 'numInvOffset.h5']
 
+        elif inps.obsDatasetName.startswith('ion'):
+            inps.outfile = ['timeseriesIon.h5', 'temporalCoherenceIon.h5', 'numInvIon.h5']
+
         else:
             raise ValueError('un-recognized input observation dataset name: {}'.format(inps.obsDatasetName))
 
@@ -297,7 +300,7 @@ def estimate_timeseries(A, B, tbase_diff, ifgram, weight_sqrt=None, min_norm_vel
 
     opt 1: X = np.dot(np.dot(numpy.linalg.inv(np.dot(B.T, B)), B.T), ifgram)
     opt 2: X = np.dot(numpy.linalg.pinv(B), ifgram)
-    opt 3: X = np.dot(scipy.linalg.pinv2(B), ifgram)
+    opt 3: X = np.dot(scipy.linalg.pinv(B), ifgram)
     opt 4: X = scipy.linalg.lstsq(B, ifgram)[0] [recommend and used]
 
     opt 4 supports weight.
@@ -1059,7 +1062,7 @@ def ifgram_inversion(inps=None):
         "bperp"      : [np.float32,  (num_date,), pbase],
         "timeseries" : [np.float32,  (num_date, length, width), None],
     }
-    writefile.layout_hdf5(inps.tsFile, ds_name_dict, meta)
+    writefile.layout_hdf5(inps.tsFile, ds_name_dict, metadata=meta)
 
     # 2.3 instantiate invQualifyFile: temporalCoherence / residualInv
     if 'residual' in os.path.basename(inps.invQualityFile).lower():

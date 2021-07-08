@@ -8,38 +8,29 @@
 
 
 import os
-import csv
 import argparse
 import warnings
-import datetime
+import datetime as dt
 import h5py
 import numpy as np
 
 import matplotlib as mpl
-from matplotlib import (
-    dates as mdates,
-    lines as mlines,
-    pyplot as plt,
-    ticker,
-    transforms,
-)
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib import pyplot as plt, ticker, dates as mdates
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import pyproj
 from cartopy import crs as ccrs
 from cartopy.mpl import geoaxes, ticker as cticker
 
-from mintpy.objects import timeseriesKeyNames, timeseriesDatasetNames
-from mintpy.objects.colors import ColormapExt
 from mintpy.objects.coord import coordinate
+from mintpy.objects.colors import ColormapExt
+from mintpy.objects import timeseriesKeyNames, timeseriesDatasetNames
 from mintpy.utils import (
     arg_group,
     ptime,
     readfile,
     network as pnet,
     utils0 as ut0,
-    utils1 as ut1,
 )
 
 
@@ -192,7 +183,7 @@ def auto_figure_title(fname, datasetNames=[], inps_dict=None):
         else:
             fig_title = datasetNames[0].split('-')[0]
 
-    elif len(datasetNames) == 1 and k in timeseriesKeyNames:
+    elif k in timeseriesKeyNames and len(datasetNames) == 1:
         if 'ref_date' in inps_dict.keys():
             ref_date = inps_dict['ref_date']
         elif 'REF_DATE' in atr.keys():
@@ -205,6 +196,7 @@ def auto_figure_title(fname, datasetNames=[], inps_dict=None):
         else:
             fig_title = '{}_{}'.format(ref_date, datasetNames[0])
 
+        # grab info of applied phase corrections from filename
         try:
             processMark = os.path.basename(fname).split('timeseries')[1].split(fext)[0]
             fig_title += processMark
@@ -224,12 +216,18 @@ def auto_figure_title(fname, datasetNames=[], inps_dict=None):
 
     else:
         fig_title = os.path.basename(fname)
+        # show dataset name for multi-band binry files
+        num_band = int(atr.get('number_bands', '1'))
+        if num_band > 1 and len(datasetNames) == 1:
+            fig_title += ' - {}'.format(datasetNames[0])
 
+    # suffix for subset
     if inps_dict.get('pix_box', None):
         box = inps_dict['pix_box']
         if (box[2] - box[0]) * (box[3] - box[1]) < num_pixel:
             fig_title += '_sub'
 
+    # suffix for re-wrapping
     if inps_dict.get('wrap', False):
         fig_title += '_wrap'
         wrap_range = inps_dict.get('wrap_range', [-1.*np.pi, np.pi])
@@ -268,6 +266,31 @@ def auto_flip_direction(metadata, ax=None, print_msg=True):
         return ax
 
     return flip_lr, flip_ud
+
+
+def auto_multilook_num(box, num_time, print_msg=True):
+    """Calcualte the default/auto multilook number based on the input 3D shape.
+    Parameters: box           - tuple of 4 int in (x0, y0, x1, y1) for the spatial bounding box
+                num_time      - int, the 3rd / time dimension size
+    Returns:    multilook_num - int, multilook number
+    """
+    # calc total number of pixels
+    num_pixel = (box[2] - box[0]) * (box[3] - box[1]) * num_time
+
+    # calc auto multilook_num
+    if   num_pixel > (64e6*320):  multilook_num = 32;      # 16k * 4k image with 320 subplots
+    elif num_pixel > (32e6*160):  multilook_num = 16;      #  8k * 4k image with 160 subplots
+    elif num_pixel > ( 8e6*160):  multilook_num = 8;       #  4k * 2k image with 160 subplots
+    elif num_pixel > ( 4e6*80) :  multilook_num = 4;       #  2k * 2k image with 80  subplots
+    elif num_pixel > ( 4e6*20) :  multilook_num = 2;       #  2k * 2k image with 20  subplots
+    else:                         multilook_num = 1;
+
+    # print out msg
+    if multilook_num > 1 and print_msg:
+        print('total number of pixels: {:.1E}'.format(num_pixel))
+        print('* multilook {0} by {0} with nearest interpolation for display to save memory'.format(multilook_num))
+
+    return multilook_num
 
 
 def auto_row_col_num(subplot_num, data_shape, fig_size, fig_num=1):
@@ -326,7 +349,7 @@ def auto_shared_lalo_location(axs, loc=(1,0,0,1), flatten=False):
 
 
 def auto_colormap_name(metadata, cmap_name=None, datasetName=None, print_msg=True):
-    gray_dataset_key_words = ['coherence', 'temporal_coherence',
+    gray_dataset_key_words = ['coherence', 'temporalCoherence',
                               '.cor', '.mli', '.slc', '.amp', '.ramp']
     if not cmap_name:
         if any(i in gray_dataset_key_words for i in [metadata['FILE_TYPE'],
@@ -391,7 +414,7 @@ def auto_adjust_xaxis_date(ax, datevector, fontsize=12, every_year=1, buffer_yea
         dee - datetime.datetime object, xmax
     """
     # convert datetime.datetime format into date in years
-    if isinstance(datevector[0], datetime.datetime):
+    if isinstance(datevector[0], dt.datetime):
         datevector = [i.year + (i.timetuple().tm_yday-1)/365.25 for i in datevector]
 
     # Min/Max
@@ -402,8 +425,8 @@ def auto_adjust_xaxis_date(ax, datevector, fontsize=12, every_year=1, buffer_yea
         if me > 12:   ye = ye + 1;   me = 1
         if ms < 1:    ys = ys - 1;   ms = 12
         if me < 1:    ye = ye - 1;   me = 12
-        dss = datetime.datetime(ys, ms, 1, 0, 0)
-        dee = datetime.datetime(ye, me, 1, 0, 0)
+        dss = dt.datetime(ys, ms, 1, 0, 0)
+        dee = dt.datetime(ye, me, 1, 0, 0)
     else:
         (dss, dee) = ax.get_xlim()
     ax.set_xlim(dss, dee)
@@ -451,10 +474,11 @@ def auto_adjust_yaxis(ax, dataList, fontsize=12, ymin=None, ymax=None):
 def plot_coherence_history(ax, date12List, cohList, p_dict={}):
     """Plot min/max Coherence of all interferograms for each date"""
     # Figure Setting
+    if 'ds_name'     not in p_dict.keys():   p_dict['ds_name']     = 'Coherence'
     if 'fontsize'    not in p_dict.keys():   p_dict['fontsize']    = 12
     if 'linewidth'   not in p_dict.keys():   p_dict['linewidth']   = 2
     if 'markercolor' not in p_dict.keys():   p_dict['markercolor'] = 'orange'
-    if 'markersize'  not in p_dict.keys():   p_dict['markersize']  = 16
+    if 'markersize'  not in p_dict.keys():   p_dict['markersize']  = 12
     if 'disp_title'  not in p_dict.keys():   p_dict['disp_title']  = True
     if 'every_year'  not in p_dict.keys():   p_dict['every_year']  = 1
     if 'vlim'        not in p_dict.keys():   p_dict['vlim']        = [0.2, 1.0]
@@ -471,18 +495,18 @@ def plot_coherence_history(ax, date12List, cohList, p_dict={}):
 
     coh_mat = pnet.coherence_matrix(date12List, cohList)
 
-    ax.bar(x_list, np.nanmax(coh_mat, axis=0), bar_width.days, label='Max Coherence')
-    ax.bar(x_list, np.nanmin(coh_mat, axis=0), bar_width.days, label='Min Coherence')
+    ax.bar(x_list, np.nanmax(coh_mat, axis=0), bar_width.days, label='Max {}'.format(p_dict['ds_name']))
+    ax.bar(x_list, np.nanmin(coh_mat, axis=0), bar_width.days, label='Min {}'.format(p_dict['ds_name']))
 
     if p_dict['disp_title']:
-        ax.set_title('Coherence History of All Related Interferograms')
+        ax.set_title('{} History of All Related Pairs'.format(p_dict['ds_name']))
 
     ax = auto_adjust_xaxis_date(ax, datevector, fontsize=p_dict['fontsize'],
                                 every_year=p_dict['every_year'])[0]
     ax.set_ylim([p_dict['vlim'][0], p_dict['vlim'][1]])
 
     ax.set_xlabel('Time [years]', fontsize=p_dict['fontsize'])
-    ax.set_ylabel('Coherence', fontsize=p_dict['fontsize'])
+    ax.set_ylabel(p_dict['ds_name'], fontsize=p_dict['fontsize'])
     ax.legend(loc='lower right')
 
     return ax
@@ -513,12 +537,14 @@ def plot_network(ax, date12List, dateList, pbaseList, p_dict={}, date12List_drop
     if 'fontsize'    not in p_dict.keys():  p_dict['fontsize']    = 12
     if 'linewidth'   not in p_dict.keys():  p_dict['linewidth']   = 2
     if 'markercolor' not in p_dict.keys():  p_dict['markercolor'] = 'orange'
-    if 'markersize'  not in p_dict.keys():  p_dict['markersize']  = 16
+    if 'markersize'  not in p_dict.keys():  p_dict['markersize']  = 12
 
     # For colorful display of coherence
     if 'cohList'     not in p_dict.keys():  p_dict['cohList']     = None
+    if 'xlabel'      not in p_dict.keys():  p_dict['xlabel']      = 'Time [years]'
     if 'ylabel'      not in p_dict.keys():  p_dict['ylabel']      = 'Perp Baseline [m]'
     if 'cbar_label'  not in p_dict.keys():  p_dict['cbar_label']  = 'Average Spatial Coherence'
+    if 'cbar_size'   not in p_dict.keys():  p_dict['cbar_size']   = '3%'
     if 'disp_cbar'   not in p_dict.keys():  p_dict['disp_cbar']   = True
     if 'colormap'    not in p_dict.keys():  p_dict['colormap']    = 'RdBu'
     if 'vlim'        not in p_dict.keys():  p_dict['vlim']        = [0.2, 1.0]
@@ -531,7 +557,7 @@ def plot_network(ax, date12List, dateList, pbaseList, p_dict={}, date12List_drop
     # support input colormap: string for colormap name, or colormap object directly
     if isinstance(p_dict['colormap'], str):
         cmap = ColormapExt(p_dict['colormap']).colormap
-    elif isinstance(p_dict['colormap'], LinearSegmentedColormap):
+    elif isinstance(p_dict['colormap'], mpl.colors.LinearSegmentedColormap):
         cmap = p_dict['colormap']
     else:
         raise ValueError('unrecognized colormap input: {}'.format(p_dict['colormap']))
@@ -586,7 +612,7 @@ def plot_network(ax, date12List, dateList, pbaseList, p_dict={}, date12List_drop
             print('display range: {}'.format(p_dict['vlim']))
 
         if p_dict['disp_cbar']:
-            cax = make_axes_locatable(ax).append_axes("right", "3%", pad="3%")
+            cax = make_axes_locatable(ax).append_axes("right", p_dict['cbar_size'], pad=p_dict['cbar_size'])
             norm = mpl.colors.Normalize(vmin=disp_min, vmax=disp_max)
             cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm)
             cbar.ax.tick_params(labelsize=p_dict['fontsize'])
@@ -643,7 +669,7 @@ def plot_network(ax, date12List, dateList, pbaseList, p_dict={}, date12List_drop
     ax = auto_adjust_xaxis_date(ax, datevector, fontsize=p_dict['fontsize'],
                                 every_year=p_dict['every_year'])[0]
     ax = auto_adjust_yaxis(ax, pbaseList, fontsize=p_dict['fontsize'])
-    ax.set_xlabel('Time [years]', fontsize=p_dict['fontsize'])
+    ax.set_xlabel(p_dict['xlabel'], fontsize=p_dict['fontsize'])
     ax.set_ylabel(p_dict['ylabel'], fontsize=p_dict['fontsize'])
     ax.tick_params(which='both', direction='in', labelsize=p_dict['fontsize'],
                    bottom=True, top=True, left=True, right=True)
@@ -654,8 +680,8 @@ def plot_network(ax, date12List, dateList, pbaseList, p_dict={}, date12List_drop
 
     # Legend
     if p_dict['disp_drop'] and p_dict['disp_legend']:
-        solid_line = mlines.Line2D([], [], color='k', ls='solid',  label='Ifg used')
-        dash_line  = mlines.Line2D([], [], color='k', ls='dashed', label='Ifg dropped')
+        solid_line = mpl.lines.Line2D([], [], color='k', ls='solid',  label='Ifgram used')
+        dash_line  = mpl.lines.Line2D([], [], color='k', ls='dashed', label='Ifgram dropped')
         ax.legend(handles=[solid_line, dash_line])
 
     return ax
@@ -683,7 +709,7 @@ def plot_perp_baseline_hist(ax, dateList, pbaseList, p_dict={}, dateList_drop=[]
     if 'fontsize'    not in p_dict.keys():   p_dict['fontsize']    = 12
     if 'linewidth'   not in p_dict.keys():   p_dict['linewidth']   = 2
     if 'markercolor' not in p_dict.keys():   p_dict['markercolor'] = 'orange'
-    if 'markersize'  not in p_dict.keys():   p_dict['markersize']  = 16
+    if 'markersize'  not in p_dict.keys():   p_dict['markersize']  = 12
     if 'disp_title'  not in p_dict.keys():   p_dict['disp_title']  = True
     if 'every_year'  not in p_dict.keys():   p_dict['every_year']  = 1
     transparency = 0.7
@@ -736,7 +762,7 @@ def plot_rotate_diag_coherence_matrix(ax, coh_list, date12_list, date12_list_dro
     # support input colormap: string for colormap name, or colormap object directly
     if isinstance(cmap, str):
         cmap = ColormapExt(cmap).colormap
-    elif isinstance(cmap, LinearSegmentedColormap):
+    elif isinstance(cmap, mpl.colors.LinearSegmentedColormap):
         pass
     else:
         raise ValueError('unrecognized colormap input: {}'.format(cmap))
@@ -761,10 +787,10 @@ def plot_rotate_diag_coherence_matrix(ax, coh_list, date12_list, date12_list_dro
     diag_mat = np.diag(np.ones(num_img))
     diag_mat[diag_mat == 0.] = np.nan
     im = ax.imshow(diag_mat, cmap='gray_r', vmin=0.0, vmax=1.0)
-    im.set_transform(transforms.Affine2D().rotate_deg(rotate_deg) + ax.transData)
+    im.set_transform(mpl.transforms.Affine2D().rotate_deg(rotate_deg) + ax.transData)
 
     im = ax.imshow(coh_mat, vmin=disp_min, vmax=1, cmap=cmap)
-    im.set_transform(transforms.Affine2D().rotate_deg(rotate_deg) + ax.transData)
+    im.set_transform(mpl.transforms.Affine2D().rotate_deg(rotate_deg) + ax.transData)
 
     #axis format
     ymax = np.sqrt(num_conn**2 / 2.) + 0.9
@@ -793,14 +819,15 @@ def plot_coherence_matrix(ax, date12List, cohList, date12List_drop=[], p_dict={}
                 im : mappable
     """
     # Figure Setting
+    if 'ds_name'     not in p_dict.keys():   p_dict['ds_name']     = 'Coherence'
     if 'fontsize'    not in p_dict.keys():   p_dict['fontsize']    = 12
     if 'linewidth'   not in p_dict.keys():   p_dict['linewidth']   = 2
     if 'markercolor' not in p_dict.keys():   p_dict['markercolor'] = 'orange'
-    if 'markersize'  not in p_dict.keys():   p_dict['markersize']  = 16
+    if 'markersize'  not in p_dict.keys():   p_dict['markersize']  = 12
     if 'disp_title'  not in p_dict.keys():   p_dict['disp_title']  = True
-    if 'fig_title'   not in p_dict.keys():   p_dict['fig_title']   = 'Coherence Matrix'
+    if 'fig_title'   not in p_dict.keys():   p_dict['fig_title']   = '{} Matrix'.format(p_dict['ds_name'])
     if 'colormap'    not in p_dict.keys():   p_dict['colormap']    = 'jet'
-    if 'cbar_label'  not in p_dict.keys():   p_dict['cbar_label']  = 'Coherence'
+    if 'cbar_label'  not in p_dict.keys():   p_dict['cbar_label']  = p_dict['ds_name']
     if 'vlim'        not in p_dict.keys():   p_dict['vlim']        = (0.2, 1.0)
     if 'disp_cbar'   not in p_dict.keys():   p_dict['disp_cbar']   = True
     if 'legend_loc'  not in p_dict.keys():   p_dict['legend_loc']  = 'best'
@@ -809,7 +836,7 @@ def plot_coherence_matrix(ax, date12List, cohList, date12List_drop=[], p_dict={}
     # support input colormap: string for colormap name, or colormap object directly
     if isinstance(p_dict['colormap'], str):
         cmap = ColormapExt(p_dict['colormap']).colormap
-    elif isinstance(p_dict['colormap'], LinearSegmentedColormap):
+    elif isinstance(p_dict['colormap'], mpl.colors.LinearSegmentedColormap):
         cmap = p_dict['colormap']
     else:
         raise ValueError('unrecognized colormap input: {}'.format(p_dict['colormap']))
@@ -1039,13 +1066,12 @@ def plot_dem_background(ax, geo_box=None, dem_shade=None, dem_contour=None, dem_
 
 
 def plot_gps(ax, SNWE, inps, metadata=dict(), print_msg=True):
-    from mintpy.objects.gps import search_gps, GPS
+    from mintpy.objects import gps
+    vprint = print if print_msg else lambda *args, **kwargs: None
+
     marker_size = 7
     vmin, vmax = inps.vlim
-    if isinstance(inps.colormap, str):
-        cmap = ColormapExt(inps.colormap).colormap
-    else:
-        cmap = inps.colormap
+    cmap = ColormapExt(inps.colormap).colormap if isinstance(inps.colormap, str) else inps.colormap
 
     atr = dict(metadata)
     atr['UNIT'] = 'm'
@@ -1057,82 +1083,61 @@ def plot_gps(ax, SNWE, inps, metadata=dict(), print_msg=True):
     if not inps.gps_end_date:
         inps.gps_end_date = metadata.get('END_DATE', None)
 
-    site_names, site_lats, site_lons = search_gps(SNWE, inps.gps_start_date, inps.gps_end_date)
-    num_site = len(site_names)
+    site_names, site_lats, site_lons = gps.search_gps(SNWE, inps.gps_start_date, inps.gps_end_date)
+    if inps.ref_gps_site and inps.ref_gps_site not in site_names:
+        raise ValueError('input reference GPS site "{}" not available!'.format(inps.ref_gps_site))
 
     k = metadata['FILE_TYPE']
     if inps.gps_component and k not in ['velocity', 'timeseries']:
         inps.gps_component = None
-        print('--gps-comp is not implemented for {} file yet, set --gps-comp = None and continue'.format(k))
+        vprint('WARNING: --gps-comp is not implemented for {} file yet, set --gps-comp = None and continue'.format(k))
 
     if inps.gps_component:
-        if print_msg:
-            print('-'*30)
-            msg = 'calculating GPS '
-            if k == 'velocity':
-                msg += 'velocity'
-            elif k == 'timeseries':
-                msg += 'displacement'
-            msg += ' with respect to {} in {} direction ...'.format(inps.ref_gps_site, inps.gps_component)
-            print(msg)
-            print('number of available GPS stations: {}'.format(num_site))
-            print('start date: {}'.format(inps.gps_start_date))
-            print('end   date: {}'.format(inps.gps_end_date))
-            prog_bar = ptime.progressBar(maxValue=num_site)
+        # plot GPS velocity/displacement along LOS direction
+        vprint('-'*30)
+        msg = 'plotting GPS '
+        msg += 'velocity' if k == 'velocity' else 'displacement'
+        msg += ' in LOS direction'
+        vprint(msg)
+        vprint('number of available GPS stations: {}'.format(len(site_names)))
+        vprint('start date: {}'.format(inps.gps_start_date))
+        vprint('end   date: {}'.format(inps.gps_end_date))
+        vprint('components projection: {}'.format(inps.gps_component))
 
-        # get insar_obj (meta / geom_file)
-        geom_file = ut1.get_geometry_file(['incidenceAngle','azimuthAngle'],
-                                          work_dir=os.path.dirname(inps.file),
-                                          coord='geo')
-        if geom_file:
-            geom_obj = geom_file
-            print('use incidenceAngle/azimuthAngle from file: {}'.format(os.path.basename(geom_file)))
-        else:
-            geom_obj = metadata
-            print('use incidenceAngle/azimuthAngle calculated from metadata')
+        # get GPS LOS observations
+        site_obs = gps.get_gps_los_obs(
+            insar_file=inps.file,
+            site_names=site_names,
+            start_date=inps.gps_start_date,
+            end_date=inps.gps_end_date,
+            gps_comp=inps.gps_component,
+            print_msg=print_msg,
+            redo=inps.gps_redo,
+        )
 
-        gps_data_list = []
-        for i in range(num_site):
-            if print_msg:
-                prog_bar.update(i+1, suffix=site_names[i])
+        # reference GPS
+        if inps.ref_gps_site:
+            vprint('referencing all GPS LOS observations to site: {}'.format(inps.ref_gps_site))
+            ref_ind = site_names.tolist().index(inps.ref_gps_site)
+            # plot label of the reference site
+            ax.annotate(site_names[ref_ind], xy=(site_lons[ref_ind], site_lats[ref_ind]),
+                        fontsize=inps.font_size)
+            # update value
+            ref_val = site_obs[ref_ind]
+            if not np.isnan(ref_val):
+                site_obs -= ref_val
 
-            # calculate gps data value
-            obj = GPS(site_names[i])
-            if k == 'velocity':
-                gps_data = obj.get_gps_los_velocity(geom_obj,
-                                                    start_date=inps.gps_start_date,
-                                                    end_date=inps.gps_end_date,
-                                                    ref_site=inps.ref_gps_site,
-                                                    gps_comp=inps.gps_component) * unit_fac
-            elif k == 'timeseries':
-                dis = obj.read_gps_los_displacement(geom_obj,
-                                                    start_date=inps.gps_start_date,
-                                                    end_date=inps.gps_end_date,
-                                                    ref_site=inps.ref_gps_site,
-                                                    gps_comp=inps.gps_component)[1] * unit_fac
-                gps_data = dis[-1] - dis[0]
+        # scale to the same unit as InSAR
+        site_obs *= unit_fac
 
-            # save calculated GPS velocities to CSV file
-            csv_file = "GPSSitesVel.csv"
-            csv_columns = ['SiteID', 'Lon', 'Lat', 'LOS velocity [{}]'.format(inps.disp_unit)]
-            if not np.isnan(gps_data):
-                gps_data_list.append([site_names[i], site_lons[i], site_lats[i], gps_data])
-                with open(csv_file, 'w') as fc:
-                    fcw = csv.writer(fc)
-                    fcw.writerow(csv_columns)
-                    fcw.writerows(gps_data_list)
+        # plot
+        for lat, lon, obs in zip(site_lats, site_lons, site_obs):
+            color = cmap( (obs - vmin) / (vmax - vmin) ) if obs else 'none'
+            ax.scatter(lon, lat, color=color, s=marker_size**2, edgecolors='k', zorder=10)
 
-            # plot
-            if not gps_data:
-                color = 'none'
-            else:
-                cm_idx = (gps_data - vmin) / (vmax - vmin)
-                color = cmap(cm_idx)
-            ax.scatter(site_lons[i], site_lats[i], color=color,
-                       s=marker_size**2, edgecolors='k', zorder=10)
-        if print_msg:
-            prog_bar.close()
     else:
+        # plot GPS locations only
+        vprint('showing GPS locations')
         ax.scatter(site_lons, site_lats, s=marker_size**2, color='w', edgecolors='k', zorder=10)
 
     # plot GPS label
@@ -1140,6 +1145,7 @@ def plot_gps(ax, SNWE, inps, metadata=dict(), print_msg=True):
         for i in range(len(site_names)):
             ax.annotate(site_names[i], xy=(site_lons[i], site_lats[i]),
                         fontsize=inps.font_size)
+
     return ax
 
 
@@ -1169,8 +1175,13 @@ def plot_colorbar(inps, im, cax):
         inps.cbar_nbins = inps.cmap_lut
 
     if inps.cbar_nbins:
-        cbar.locator = ticker.MaxNLocator(nbins=inps.cbar_nbins)
-        cbar.update_ticks()
+        if inps.cbar_nbins <= 2:
+            # manually set tick for better positions when the color step is not a common number
+            # e.g. for numInvIfgram.h5
+            cbar.set_ticks(inps.dlim)
+        else:
+            cbar.locator = ticker.MaxNLocator(nbins=inps.cbar_nbins)
+            cbar.update_ticks()
 
     cbar.ax.tick_params(which='both', direction='out', labelsize=inps.font_size, colors=inps.font_color)
 
@@ -1351,15 +1362,17 @@ def scale_data4disp_unit_and_rewrap(data, metadata, disp_unit=None, wrap=False, 
     return data, disp_unit, disp_scale, wrap
 
 
-def read_mask(fname, mask_file=None, datasetName=None, box=None, print_msg=True):
+def read_mask(fname, mask_file=None, datasetName=None, box=None, xstep=1, ystep=1,
+              vmin=None, vmax=None, print_msg=True):
     """Find and read mask for input data file fname
     Parameters: fname       : string, data file name/path
                 mask_file   : string, optional, mask file name
                 datasetName : string, optional, dataset name for HDFEOS file type
                 box         : tuple of 4 int, for reading part of data
-    Returns:    msk         : 2D np.array, mask data
+    Returns:    mask        : 2D np.ndarray in bool, mask data
                 mask_file   : string, file name of mask data
     """
+    vprint = print if print_msg else lambda *args, **kwargs: None
     atr = readfile.read_attribute(fname)
     k = atr['FILE_TYPE']
 
@@ -1384,54 +1397,74 @@ def read_mask(fname, mask_file=None, datasetName=None, box=None, print_msg=True)
                 mask_file = None
 
     # Read mask file if inputed
-    msk = None
+    mask = None
     if os.path.isfile(str(mask_file)):
         try:
-            atrMsk = readfile.read_attribute(mask_file)
-            if all(int(atrMsk[key]) == int(atr[key]) for key in ['LENGTH','WIDTH']):
+            atr_msk = readfile.read_attribute(mask_file)
+            if all(int(atr_msk[key]) == int(atr[key]) for key in ['LENGTH','WIDTH']):
                 # grab dsname for conn comp mask [None for the others]
                 dsName=None
-                if all(meta['FILE_TYPE'] == 'ifgramStack' for meta in [atr, atrMsk]):
+                if all(meta['FILE_TYPE'] == 'ifgramStack' for meta in [atr, atr_msk]):
                     date12 = datasetName.split('-')[1]
                     dsName = 'connectComponent-{}'.format(date12)
 
                 # read mask data
-                msk = readfile.read(mask_file,
-                                    box=box,
-                                    datasetName=dsName,
-                                    print_msg=print_msg)[0]
-                if print_msg:
-                    print('read mask from file:', os.path.basename(mask_file))
+                mask = readfile.read(mask_file,
+                                     box=box,
+                                     datasetName=dsName,
+                                     print_msg=print_msg)[0]
+                vprint('read mask from file:', os.path.basename(mask_file))
 
             else:
                 mask_file = None
-                if print_msg:
-                    msg = 'WARNING: input file has different size from mask file: {}'.format(mask_file)
-                    msg += '\n    data file {} row/column number: {} / {}'.format(fname, atr['LENGTH'], atr['WIDTH'])
-                    msg += '\n    mask file {} row/column number: {} / {}'.format(mask_file, atrMsk['LENGTH'], atrMsk['WIDTH'])
-                    msg += '\n    Continue without mask.'
-                    print(msg)
+                msg = 'WARNING: input file has different size from mask file: {}'.format(mask_file)
+                msg += '\n    data file {} row/column number: {} / {}'.format(fname, atr['LENGTH'], atr['WIDTH'])
+                msg += '\n    mask file {} row/column number: {} / {}'.format(mask_file, atr_msk['LENGTH'], atr_msk['WIDTH'])
+                msg += '\n    Continue without mask.'
+                vprint(msg)
 
         except:
             mask_file = None
-            if print_msg:
-                print('Can not open mask file:', mask_file)
+            vprint('Can not open mask file:', mask_file)
 
     elif k in ['HDFEOS']:
         if datasetName.split('-')[0] in timeseriesDatasetNames:
             mask_file = fname
-            msk = readfile.read(fname, datasetName='mask', print_msg=print_msg)[0]
-            if print_msg:
-                print('read {} contained mask dataset.'.format(k))
+            mask = readfile.read(fname, datasetName='mask', print_msg=print_msg)[0]
+            vprint('read {} contained mask dataset.'.format(k))
 
     elif fname.endswith('PARAMS.h5'):
         mask_file = fname
-        h5msk = h5py.File(fname, 'r')
-        msk = h5msk['cmask'][:] == 1.
-        h5msk.close()
-        if print_msg:
-            print('read {} contained cmask dataset'.format(os.path.basename(fname)))
-    return msk, mask_file
+        with h5py.File(fname, 'r') as f:
+            mask = f['cmask'][:] == 1.
+        vprint('read {} contained cmask dataset'.format(os.path.basename(fname)))
+
+    # multilook
+    if mask is not None and xstep * ystep > 1:
+        # output size if x/ystep > 1
+        xsize = int(mask.shape[1] / xstep)
+        ysize = int(mask.shape[0] / ystep)
+
+        # sampling
+        mask = mask[int(ystep/2)::ystep,
+                    int(xstep/2)::xstep]
+        mask = mask[:ysize, :xsize]
+
+    # set to bool type
+    if mask is not None:
+        mask[np.isnan(mask)] = 0
+
+        # vmin/max
+        if vmin is not None:
+            mask[mask < vmin] = 0
+            vprint(f'hide pixels with mask value < {vmin}')
+        if vmax is not None:
+            mask[mask > vmax] = 0
+            vprint(f'hide pixels with mask value > {vmax}')
+
+        mask = mask != 0
+
+    return mask, mask_file
 
 
 
@@ -1523,49 +1556,68 @@ def draw_lalo_label(geo_box, ax=None, lalo_step=None, lalo_loc=[1, 0, 0, 1], lal
     return ax
 
 
-def draw_scalebar(ax, geo_box, loc=[0.2, 0.2, 0.1], labelpad=0.05, font_size=12, color='k'):
+def draw_scalebar(ax, geo_box, unit='degrees', loc=[0.2, 0.2, 0.1], labelpad=0.05, font_size=12, color='k'):
     """draw a simple map scale from x1,y to x2,y in map projection coordinates, label it with actual distance
     ref_link: http://matplotlib.1069221.n5.nabble.com/basemap-scalebar-td14133.html
     Parameters: ax       : matplotlib.pyplot.axes object
-                geo_box  : tuple of 4 float in (x0, y0, x1, y1) for (W, N, E, S) in degrees
-                loc      : list of 3 float, distance, lat/lon of scale bar center in ratio of width, relative coord
+                geo_box  : tuple of 4 float in (x0, y0, x1, y1) for (W, N, E, S) in degrees / meters
+                unit     : str, coordinate unit - degrees or meters
+                loc      : list of 3 float in (length, lat, lon) of scale bar center in ratio of width, relative coord
                 labelpad : float
     Returns:    ax
     Example:    from mintpy.utils import plot as pp
                 pp.draw_scale_bar(ax, geo_box)
     """
+    geod = pyproj.Geod(ellps='WGS84')
     if not ax:
         ax = plt.gca()
 
-    geod = pyproj.Geod(ellps='WGS84')
-
-    # length in meter
-    scene_width = geod.inv(geo_box[0], geo_box[3], geo_box[2], geo_box[3])[2]
-    distance = ut0.round_to_1(scene_width * loc[0])
+    ## location - center
     lon_c = geo_box[0] + loc[1] * (geo_box[2] - geo_box[0])
     lat_c = geo_box[3] + loc[2] * (geo_box[1] - geo_box[3])
 
-    # plot scale bar
-    if distance > 1000.0:
-        distance = np.rint(distance/1000.0)*1000.0
-    lon_c2, lat_c2 = geod.fwd(lon_c, lat_c, 90, distance)[0:2]
-    length = np.abs(lon_c - lon_c2)
-    lon0 = lon_c - length/2.0
-    lon1 = lon_c + length/2.0
+    ## length
+    # 1. calc scene width in meters
+    if unit.startswith('deg'):
+        scene_width = geod.inv(geo_box[0], geo_box[3],
+                               geo_box[2], geo_box[3])[2]
+    elif unit.startswith('meter'):
+        scene_width = geo_box[2] - geo_box[0]
 
+    # 2. convert length ratio to length in meters
+    length_meter = ut0.round_to_1(scene_width * loc[0])
+    if length_meter > 1000.0:
+        # round to the nearest km
+        length_meter = np.rint(length_meter/1000.0)*1000.0
+
+    # 3. convert length in meters to length in display coord unit
+    if unit.startswith('deg'):
+        lon_c2 = geod.fwd(lon_c, lat_c, 90, length_meter)[0]
+        length_disp = np.abs(lon_c - lon_c2)
+    elif unit.startswith('meter'):
+        length_disp = length_meter
+
+    ## starting/ending longitude
+    lon0 = lon_c - length_disp / 2.0
+    lon1 = lon_c + length_disp / 2.0
+
+    ## plot scale bar
     ax.plot([lon0, lon1], [lat_c, lat_c], color=color)
-    ax.plot([lon0, lon0], [lat_c, lat_c + 0.1*length], color=color)
-    ax.plot([lon1, lon1], [lat_c, lat_c + 0.1*length], color=color)
+    ax.plot([lon0, lon0], [lat_c, lat_c + 0.1*length_disp], color=color)
+    ax.plot([lon1, lon1], [lat_c, lat_c + 0.1*length_disp], color=color)
 
-    # plot scale bar label
+    ## plot scale bar label
     unit = 'm'
-    if distance >= 1000.0:
+    if length_meter >= 1000.0:
         unit = 'km'
-        distance *= 0.001
-    label = '{:.0f} {}'.format(distance, unit)
+        length_meter *= 0.001
+    label = '{:.0f} {}'.format(length_meter, unit)
     txt_offset = (geo_box[1] - geo_box[3]) * labelpad
 
-    ax.text(lon0+0.5*length, lat_c+txt_offset, label,
+    ax.text(lon0 + length_disp / 2.0,
+            lat_c + txt_offset,
+            label,
             verticalalignment='center', horizontalalignment='center',
             fontsize=font_size, color=color)
+
     return ax

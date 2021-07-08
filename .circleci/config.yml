@@ -23,10 +23,14 @@ jobs:
             chmod +x Miniconda3-latest-Linux-x86_64.sh
             ./Miniconda3-latest-Linux-x86_64.sh -b -p ${HOME}/tools/miniconda3
             ${HOME}/tools/miniconda3/bin/conda init bash
+            ${HOME}/tools/miniconda3/bin/conda config --add channels conda-forge
+            ${HOME}/tools/miniconda3/bin/conda install -c conda-forge --yes mamba
 
       - run:
           name: Installing MintPy, PyAPS and PySolid
+          no_output_timeout: 30m
           command: |
+            export PYTHONUNBUFFERED=1
             # setup environment variable
             export PYTHONPATH=${PYTHONPATH}:${MINTPY_HOME}:${HOME}/tools/PyAPS:${HOME}/tools/PySolid
             export PATH=${MINTPY_HOME}/mintpy:${CONDA_PREFIX}/bin:${PATH}
@@ -35,8 +39,7 @@ jobs:
             git clone https://github.com/insarlab/PySolid.git ${HOME}/tools/PySolid
             # install dependencies
             source activate root
-            conda config --add channels conda-forge
-            conda install --yes --file $MINTPY_HOME/docs/conda.txt gdal>=3 gfortran_linux-64
+            mamba install --verbose --yes --file ${MINTPY_HOME}/docs/conda.txt gdal>=3 fortran-compiler
             pip install git+https://github.com/tylere/pykml.git
             # compile pysolid Fortran code
             cd ${HOME}/tools/PySolid/pysolid
