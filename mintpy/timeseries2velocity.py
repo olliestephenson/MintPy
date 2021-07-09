@@ -9,7 +9,7 @@
 # Add poly, periodic and step func., Yuan-Kai Liu, Aug 2020.
 # Add exp and log func., Yuan-Kai Liu, Jun 2021.
 
-## Modifications not pushed to main repo
+## Ollie's Modifications not pushed to main repo
 # Added output of reconstructed time series, Ollie Stephenson, April 2021
 # Trying to add L1 norm for time series fitting (v. slow!), Ollie Stephenson, April 2021
 
@@ -130,7 +130,7 @@ def create_parser():
 
     # outputting reconstructed time series
     # Added by Ollie 03/21
-    parser.add_argument('--recons', dest='recons_bool', default=False, help='output reconstructed time series.')
+    parser.add_argument('--recons', dest='output_recons', action='store_true', help='output reconstructed time series.')
     # norm
     parser.add_argument('--norm', dest='norm', default='l2',help='norm used for time series fit. l2 (default) or l1.')
 
@@ -437,7 +437,7 @@ def estimate_time_func(model, date_list, dis_ts, ref_date=None,norm='l2'):
                                             },
                              ...
                              }
-                norm      - norm to minimise for time series fit (L1 or L2)
+                norm      - norm to minimise for time series fit (L1 or L2 - note L1 doesn't output errors)
     Returns:    G         - 2D np.ndarray, design matrix           in size of (num_date, num_par)
                 m         - 2D np.ndarray, parameter solution      in size of (num_par, num_pixel)
                 e2        - 1D np.ndarray, sum of squared residual in size of (num_pixel,)
@@ -465,7 +465,7 @@ def estimate_time_func(model, date_list, dis_ts, ref_date=None,norm='l2'):
             raise ValueError('G matrix is redundant/rank-deficient!')
     # Added by Ollie 03/13/21
     elif norm=='l1':
-        print('L1 norm not outputting errors')
+        print('L1 norm. WARNING: not outputting errors')
         num_par = np.shape(G)[1]
         num_pixel = np.shape(dis_ts)[1]
         m = np.empty((num_par,num_pixel))
@@ -521,16 +521,11 @@ def run_timeseries2time_func(inps):
         atr[key_prefix+key] = str(vars(inps)[key])
 
     # instantiate output file
-# <<<<<<< HEAD
-#     layout_hdf5(inps, atr, model)
-
-# =======
-    ds_name_dict, ds_unit_dict = model2hdf5_structure(model, ds_shape=(length, width))
+    ds_name_dict, ds_unit_dict = model2hdf5_structure(model, ds_shape=(length, width),inps=inps)
     writefile.layout_hdf5(inps.outfile,
                           metadata=atr,
                           ds_name_dict=ds_name_dict,
                           ds_unit_dict=ds_unit_dict)
-# >>>>>>> main
 
     ## estimation
 
@@ -662,7 +657,6 @@ def run_timeseries2time_func(inps):
                 print('estimate time functions via linalg.lstsq ...')
             elif norm=='l1':
                 print('estimate time functions via iterL1 ...')
-            print('estimate time functions via linalg.lstsq ...')
             G, m[:, mask], e2 = estimate_time_func(model=model,
                                                    date_list=inps.dateList,
                                                    dis_ts=ts_data,
@@ -707,58 +701,40 @@ def run_timeseries2time_func(inps):
                 # vel_std = np.sqrt(np.sum(ts_diff ** 2, axis=0) / np.sum(t_diff ** 2)  / (num_date - 2))
 
         # Added by Ollie 03/08/21
-        if inps.recons_bool:
+        if inps.output_recons:
             recons = np.matmul(G,m)
         else:
             recons=None
 
         # write
-        block = [box[1], box[3], box[0], box[2]]
-# <<<<<<< HEAD
-#         write_hdf5_block(inps.outfile, model, m, m_std,
-#                          num_date = inps.numDate,
-#                          recons=recons,
-#                          mask=mask,
-#                          block=block)
-# =======
-        # 21-07-08 - recons pass added by Ollie 
+        # 21-07-08 - recons pass to model2hdf5_dataset added by Ollie 
         ds_dict = model2hdf5_dataset(model, m, m_std, recons=recons, mask=mask)
         for ds_name, data in ds_dict.items():
             # 21-07-08 - fudge to take account of the different dimensions of recons data
             if ds_name == 'recons':
+                print(data.shape)
+                block_3d = [0, num_date, box[1], box[3], box[0], box[2]]
                 writefile.write_hdf5_block(inps.outfile,
-                                       data=data,
+                                       data=data.reshape(-1,box_length,box_width),
                                        datasetName=ds_name,
-                                       block=block)
+                                       block=block_3d)
             else:
+                block = [box[1], box[3], box[0], box[2]]
                 writefile.write_hdf5_block(inps.outfile,
                                        data=data.reshape(box_length, box_width),
                                        datasetName=ds_name,
                                        block=block)
-# >>>>>>> main
 
     return inps.outfile
 
-
-# <<<<<<< HEAD
-# def layout_hdf5(inps, atr, model):
-#     """create HDF5 file for estimated time functions
-#     with defined metadata and (empty) dataset structure
-#     """
-    
-#     # read inputs
-#     out_file = inps.outfile
-#     numDate = inps.numDate
-
-# =======
-def model2hdf5_structure(model, ds_shape=None):
+def model2hdf5_structure(model, ds_shape=None,inps=None):
     """Get the dataset name/structure for writefile.layout_hdf5().
     Parameters: model - dict, dictionary of time functions, check estimate_time_func() for details.
                 shape - tuple of 2 int in (length, width)
+                inps - pass inps in order to set up 'recons' dataset
     Returns:    ds_name_dict - dict, dictionary for the structure of an HDF5 file
                 ds_unit_dict - dict, dictionary for the dataset unit
     """
-# >>>>>>> main
     # deformation model info
     poly_deg   = model['polynomial']
     num_period = len(model['periodic'])
@@ -842,101 +818,14 @@ def model2hdf5_structure(model, ds_shape=None):
 
     # Added by Olle 03/08/21
     # Adjusted 21-07-08
-    if inps.recons_bool:
+    if inps and inps.output_recons:
         numDate = inps.numDate
         dsName = 'recons'
-        ds_name_dict[dsName] = [dataType, (numDate, length, width), None]
+        ds_name_dict[dsName] = [dataType, (numDate, *ds_shape), None]
         ds_unit_dict[dsName] = 'm'
     
     return ds_name_dict, ds_unit_dict
 
-# <<<<<<< HEAD
-#     # Added by Olle 03/08/21
-#     if inps.recons_bool:
-#         dsName = 'recons'
-#         ds_name_dict[dsName] = [dataType, (numDate, length, width)]
-#         ds_unit_dict[dsName] = 'm'
-
-#     # layout hdf5
-#     writefile.layout_hdf5(out_file, ds_name_dict, metadata=atr)
-
-#     # add metadata to HDF5 dataset
-#     max_digit = max([len(i) for i in ds_unit_dict.keys()])
-#     with h5py.File(out_file, 'r+') as f:
-#         for key, value in ds_unit_dict.items():
-#             f[key].attrs['UNIT'] = value
-#             print('add /{d:<{w}} attribute: UNIT = {u}'.format(d=key,
-#                                                                w=max_digit,
-#                                                                u=value))
-
-#     return out_file
-
-
-# def write_hdf5_block(out_file, model, m, m_std, recons=None, num_date=None, mask=None, block=None):
-#     """write the estimated time function parameters to file
-#     Modified by Ollie 03/07/21 to output the reconstructed time series - added 'recons'
-#     Note that this is different to the writefile.write_hdf5_block function 
-
-#     Parameters: out_file - str, path of output time func file
-#                 model    - dict, dict of time functions, e.g.:
-#                     {'polynomial' : 2,            # int, polynomial with
-#                                                   # e.g.: 1 (linear), 2 (quad), 3 (cubic), etc.
-#                      'periodic'   : [1.0, 0.5],   # list of float, period(s) in years.
-#                                                   # e.g.: 1.0 (annual), 0.5 (semiannual), etc.
-#                      'step'       : ['20061014'], # list of str, date(s) in YYYYMMDD.
-#                      ...
-#                      }
-#                 m/m_std  - 2D np.ndarray in float32 in size of (num_param, length*width), time func param. (Std. Dev.)
-#                 recons   - reconstructed time series (Gm)
-#                 num_date - number of dates in time series. Needed when writing recons
-#                 mask     - 1D np.ndarray in float32 in size of (length*width), mask of valid pixels
-#                 block    - list of 4 int, for [yStart, yEnd, xStart, xEnd]
-#     """
-
-#     def write_dataset_block(f, dsName, data, block):
-#         print('write dataset /{:<20} block: {}'.format(dsName, block))
-
-#         if len(block) == 4:
-#             f[dsName][block[0]:block[1], 
-#                       block[2]:block[3]] = data.reshape(block[1] - block[0],
-#                                                         block[3] - block[2])
-#         # Added by Ollie 03/08/21
-#         elif len(block) == 6:
-#             f[dsName][block[0]:block[1], 
-#                       block[2]:block[3],
-#                       block[4]:block[5]] = data.reshape(block[1] - block[0],
-#                                                         block[3] - block[2],
-#                                                         block[5] - block[4])
-#         else:
-#             print('Wrong block dimensions')
-# =======
-#     # time func 4 - exp
-#     for exp_onset in model['exp'].keys():
-#         for exp_tau in model['exp'][exp_onset]:
-#             # dataset name
-#             dsName = 'exp{}Tau{}'.format(exp_onset, exp_tau)
-
-#             # update ds_name/unit_dict
-#             ds_name_dict[dsName] = [dataType, ds_shape, None]
-#             ds_unit_dict[dsName] = 'm'
-#             ds_name_dict[dsName+'Std'] = [dataType, ds_shape, None]
-#             ds_unit_dict[dsName+'Std'] = 'm'
-
-#     # time func 5 - log
-#     for log_onset in model['log'].keys():
-#         for log_tau in model['log'][log_onset]:
-#             # dataset name
-#             dsName = 'log{}Tau{}'.format(log_onset, log_tau)
-
-#             # update ds_name/unit_dict
-#             ds_name_dict[dsName] = [dataType, ds_shape, None]
-#             ds_unit_dict[dsName] = 'm'
-#             ds_name_dict[dsName+'Std'] = [dataType, ds_shape, None]
-#             ds_unit_dict[dsName+'Std'] = 'm'
-
-#     return ds_name_dict, ds_unit_dict
-
-# >>>>>>> main
 
 def model2hdf5_dataset(model, m, m_std, recons=None, mask=None):
     """Prepare the estimated model parameters into a dict of matrices ready HDF5 dataset writing.
@@ -1042,51 +931,8 @@ def model2hdf5_dataset(model, m, m_std, recons=None, mask=None):
         # reconstructed time-series from model - 3D
         dsName = 'recons'
         ds_dict[dsName] = recons
-        # block_3d = [0, num_date, block[0], block[1], block[2], block[3]]
-        # # Use writefile function to write the time series 
-        # write_dataset_block(f,
-        #                     dsName=dsName,
-        #                     data=recons,
-        #                     block=block_3d)
 
     return ds_dict
-# <<<<<<< HEAD
-#             dsName = 'step{}'.format(model['step'][i])
-
-#             # write
-#             write_dataset_block(f,
-#                                 dsName=dsName,
-#                                 data=m[p0+i, :],
-#                                 block=block)
-#             write_dataset_block(f,
-#                                 dsName=dsName+'Std',
-#                                 data=m_std[p0+i, :],
-#                                 block=block)
-
-#         # Added by Ollie 03/08/21
-#         # Modified 21-07-08
-#         if recons is not None:
-#             # reconstructed time-series from model - 3D
-#             dsName = 'recons'
-#             block_3d = [0, num_date, block[0], block[1], block[2], block[3]]
-#             # Use writefile function to write the time series 
-#             write_dataset_block(f,
-#                                 dsName=dsName,
-#                                 data=recons,
-#                                 block=block_3d)
-            
-
-#     print('close HDF5 file {}'.format(out_file))
-#     return out_file
-# =======
-#             dsName = 'log{}Tau{}'.format(log_onset, log_tau)
-
-#             ds_dict[dsName] = m[p0+i, :]
-#             ds_dict[dsName+'Std'] = m_std[p0+i, :]
-#             i += 1
-
-#     return ds_dict
-# >>>>>>> main
 
 
 ############################################################################
