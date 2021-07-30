@@ -56,11 +56,11 @@ def create_parser():
     ###
     # parser.add_argument('--ylim',dest='ylim',nargs=2, metavar='(YMIN, YMAX)', type=float,default=None,
     #                     help='Y axis limits on profile plot, in the same units as the data')
-    # parser.add_argument('-v','--vlim', dest='vlim', nargs=2, metavar=('VMIN', 'VMAX'), type=float,
-    #                     help='Display limits for matrix plotting.')
     # data.add_argument('-u', '--unit', dest='disp_unit', metavar='UNIT',
     #                     help='unit for display.')
     ### 
+    # Added by Ollie 
+    parser.add_argument('--save_values',dest='save_values',action='store_true',help='Write profile values to file')
 
     parser.add_argument('--noverbose', dest='print_msg', action='store_false',
                         help='Disable the verbose message printing.')
@@ -189,7 +189,7 @@ def get_view_cmd(iargs):
     # if inps.unit:
     #     view_cmd += ' -u {}'.format(unit)
     # print(view_cmd)
-    view_cmd += ' -v -10 10 -u mm/yr'
+    # view_cmd += ' -v -10 10 -u mm/yr'
     ###
         
     return view_cmd
@@ -331,6 +331,18 @@ class transectionViewer():
                                 txn['value'] - self.offset[i],
                                 c=pp.mplColors[i],
                                 s=self.marker_size**2)
+            # Added by Ollie, 21-07-11
+            # Save profile to file 
+            # TODO - should put this in a separate script, not in the plotting script
+            if self.save_values:
+                import csv
+                rows = zip(txn['distance']/1000.0,txn['value'])
+                outname = 'profile_{}.csv'.format(i)
+                with open(outname,"w") as f:
+                    writer = csv.writer(f)
+                    for row in rows:
+                        writer.writerow(row)
+
 
         self.outfile_base = 'transect_Y{}X{}_Y{}X{}'.format(start_yx[0], start_yx[1], end_yx[0], end_yx[1])
 
@@ -348,10 +360,11 @@ class transectionViewer():
         self.ax_txn.set_ylabel(self.disp_unit, fontsize=self.font_size)
         
         ###
-        # Added by Ollie for Makran plotting, July 2021 #TODO - modfiy this
+        # Added by Ollie for Makran plotting, July 2021 #TODO - modfiy this to take command line arguments 
+        # Adds y axis limits to the profile
         # if self.ylim is not None:
         #     self.ax_txn.set_ylim([self.ylim[0],self.ylim[1])
-        self.ax_txn.set_ylim([-20,20]) # y limits for the profile 
+        # self.ax_txn.set_ylim([-20,20]) # y limits for the profile 
         ###
         self.ax_txn.tick_params(which='both', direction='in', labelsize=self.font_size,
                                 bottom=True, top=True, left=True, right=True)
