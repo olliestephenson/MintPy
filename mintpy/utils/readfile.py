@@ -708,6 +708,7 @@ def read_attribute(fname, datasetName=None, metafile_ext=None):
             d1_list = [i for i in f.keys() if isinstance(f[i], h5py.Dataset) and f[i].ndim >= 2]
 
         # FILE_TYPE - k
+        # pre-defined/known dataset/group names > existing FILE_TYPE > exsiting dataset/group names
         py2_mintpy_stack_files = ['interferograms', 'coherence', 'wrapped'] #obsolete mintpy format
         if any(i in d1_list for i in ['unwrapPhase', 'azimuthOffset']):
             k = 'ifgramStack'
@@ -725,6 +726,8 @@ def read_attribute(fname, datasetName=None, metafile_ext=None):
             k = 'giantIfgramStack'
         elif any(i in g1_list for i in py2_mintpy_stack_files):
             k = list(set(g1_list) & set(py2_mintpy_stack_files))[0]
+        elif 'FILE_TYPE' in atr:
+            k = atr['FILE_TYPE']
         elif len(d1_list) > 0:
             k = d1_list[0]
         elif len(g1_list) > 0:
@@ -1308,7 +1311,7 @@ def read_gdal_vrt(fname):
     # projection / coordinate unit
     srs = osr.SpatialReference(wkt=ds.GetProjection())
     srs_name = srs.GetName()
-    if 'UTM' in srs_name:
+    if srs_name and 'UTM' in srs_name:
         atr['UTM_ZONE'] = srs_name.split('UTM zone')[-1].strip()
         atr['X_UNIT'] = 'meters'
         atr['Y_UNIT'] = 'meters'

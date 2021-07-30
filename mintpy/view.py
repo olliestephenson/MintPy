@@ -167,6 +167,9 @@ def cmd_line_parse(iargs=None):
     # verbose print using --noverbose option
     global vprint
     vprint = print if inps.print_msg else lambda *args, **kwargs: None
+    # print view.py command line if --noverbose (used in smallbaselineApp.py)
+    if not inps.print_msg:
+        print('view.py', ' '.join(iargs))
 
     if inps.disp_setting_file:
         inps = update_inps_with_display_setting_file(inps, inps.disp_setting_file)
@@ -758,6 +761,9 @@ def read_input_file_info(inps):
 
 def search_dataset_input(allList, inList=[], inNumList=[], search_dset=True):
     """Get dataset(es) from input dataset / dataset_num"""
+    # make a copy to avoid weird variable behavior
+    inNumList = [x for x in inNumList]
+
     # inList --> inNumList --> outNumList --> outList
     if inList:
         if isinstance(inList, str):
@@ -1327,12 +1333,15 @@ def prepare4multi_subplots(inps, metadata):
     if len(inps.dsetFamilyList) == 1 and inps.atr['FILE_TYPE'] == 'ifgramStack':
         inps.date12List = sorted(list(set(x.split('-')[1] for x in inps.sliceList)))
 
-    ## calculate multilook_num
-    # ONLY IF:
-    #   inps.multilook is True (no --nomultilook input) AND
-    #   inps.multilook_num ==1 (no --multilook-num input)
-    # inps.multilook is used for this check ONLY
-    if inps.multilook and inps.multilook_num == 1:
+    if inps.multilook_num > 1 and inps.print_msg:
+        print('multilook {0} by {0} with nearest interpolation'.format(inps.multilook_num))
+
+    elif inps.multilook and inps.multilook_num == 1:
+        ## calculate multilook_num
+        # ONLY IF:
+        #   inps.multilook is True (no --nomultilook input) AND
+        #   inps.multilook_num ==1 (no --multilook-num input)
+        # inps.multilook is used for this check ONLY
         inps.multilook_num = pp.auto_multilook_num(inps.pix_box, inps.fig_row_num * inps.fig_col_num,
                                                    print_msg=inps.print_msg)
 
