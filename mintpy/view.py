@@ -752,6 +752,7 @@ def read_input_file_info(inps):
 
     # File dataset List
     inps.sliceList = readfile.get_slice_list(inps.file)
+    print(inps.sliceList)
 
     # Read input list of dataset to display
     inps, atr = read_dataset_input(inps)

@@ -79,7 +79,7 @@ def cmd_line_parse(iargs=None):
     # check input azimuth angle
     if inps.azimuth < 0.:
         inps.azimuth += 360.
-    inps.azimuth *= np.pi/180.
+    # inps.azimuth *= np.pi/180.
 
     atr1 = readfile.read_attribute(inps.file[0])
     atr2 = readfile.read_attribute(inps.file[1])
@@ -187,7 +187,7 @@ def get_design_matrix(atr1, atr2, az_angle=90):
     return A
 
 
-def asc_desc2horz_vert(data_asc, data_desc, atr_asc, atr_desc):
+def asc_desc2horz_vert(data_asc, data_desc, atr_asc, atr_desc, azimuth=90):
     """Decompose asc / desc LOS data into horz / vert data."""
     length, width = data_asc.shape
     # prepare LOS data
@@ -195,7 +195,7 @@ def asc_desc2horz_vert(data_asc, data_desc, atr_asc, atr_desc):
 
     # get design matrix
     print('get design matrix')
-    A = get_design_matrix(atr_asc, atr_desc)
+    A = get_design_matrix(atr_asc, atr_desc,az_angle=azimuth)
 
     # decompose
     print('project asc/desc into horz/vert direction')
@@ -206,7 +206,7 @@ def asc_desc2horz_vert(data_asc, data_desc, atr_asc, atr_desc):
     return data_h, data_v
 
 
-def asc_desc_files2horz_vert(fname1, fname2, dsname=None):
+def asc_desc_files2horz_vert(fname1, fname2, dsname=None, azimuth=90):
     """Decompose asc / desc LOS files into horz / vert data.
     Parameters: fname1/2 : str, LOS data
     Returns:    dH/dV    : 2D matrix
@@ -252,7 +252,7 @@ def asc_desc_files2horz_vert(fname1, fname2, dsname=None):
 
     # 3. Project displacement from LOS to Horizontal and Vertical components
     print('---------------------')
-    dH, dV = asc_desc2horz_vert(dLOS_list[0], dLOS_list[1], atr_list[0], atr_list[1])
+    dH, dV = asc_desc2horz_vert(dLOS_list[0], dLOS_list[1], atr_list[0], atr_list[1], azimuth)
 
     # 4. Update Attributes
     atr = atr_list[0].copy()
@@ -260,6 +260,7 @@ def asc_desc_files2horz_vert(fname1, fname2, dsname=None):
         atr['FILE_TYPE'] = dsname
 
     atr['WIDTH']  = str(width)
+    print(width,length)
     atr['LENGTH'] = str(length)
     atr['X_STEP'] = str(lon_step)
     atr['Y_STEP'] = str(lat_step)
@@ -282,18 +283,20 @@ def write_to_one_file(outfile, dH, dV, atr, dLOS_list, atr_list, ref_file=None):
 
     print('write all datasets into {}'.format(outfile))
     length, width = dH.shape
+    print(dH.shape)
     dsDict = {}
     for i in range(len(atr_list)):
         # auto dataset name
-        atr = atr_list[i]
-        dsName = sensor.project_name2sensor_name(atr['FILE_PATH'])[0]
+        atr_i = atr_list[i]
+        # Modified by Ollie - take project name rather than file name
+        dsName = sensor.project_name2sensor_name(atr_i['PROJECT_NAME'])[0]
         if atr['ORBIT_DIRECTION'].lower().startswith('asc'):
             dsName += 'A'
         else:
             dsName += 'D'
-        if 'trackNumber' in atr.keys():
-            dsName += 'T{}'.format(atr['trackNumber'])
-        dsName += '_{}'.format(atr['DATE12'])
+        if 'trackNumber' in atr_i.keys():
+            dsName += 'T{}'.format(atr_i['trackNumber'])
+        dsName += '_{}'.format(atr_i['DATE12'])
 
         dsDict[dsName] = dLOS_list[i]
     dsDict['vertical'] = dV
@@ -310,7 +313,8 @@ def main(iargs=None):
     (dH, dV, atr,
      dLOS_list, atr_list) = asc_desc_files2horz_vert(inps.file[0],
                                                      inps.file[1],
-                                                     dsname=inps.dsname)
+                                                     dsname=inps.dsname,
+                                                     azimuth=inps.azimuth)
 
     print('---------------------')
     if inps.one_outfile:

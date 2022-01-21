@@ -61,6 +61,7 @@ def create_parser():
     ### 
     # Added by Ollie 
     parser.add_argument('--save_values',dest='save_values',action='store_true',help='Write profile values to file')
+    parser.add_argument('--profile_width',dest='prof_width',help='Width of the profile box in km. Without this arg we just take a profile along a line. Width is in km if coords are lat/lon, in pixels if coords are in pixels',default=None,type=float)
 
     parser.add_argument('--noverbose', dest='print_msg', action='store_false',
                         help='Disable the verbose message printing.')
@@ -320,17 +321,31 @@ class transectionViewer():
                 txn = ut.transect_lalo(self.data_list[i],
                                        self.atr_list[i],
                                        start_lalo, end_lalo,
-                                       interpolation=self.interpolation)
+                                       interpolation=self.interpolation,
+                                       prof_width=self.prof_width)
             else:
                 txn = ut.transect_yx(self.data_list[i],
                                      self.atr_list[i],
                                      start_yx, end_yx,
-                                     interpolation=self.interpolation)
+                                     interpolation=self.interpolation,
+                                     prof_width=self.prof_width)
             # plot
-            self.ax_txn.scatter(txn['distance']/1000.0,
-                                txn['value'] - self.offset[i],
-                                c=pp.mplColors[i],
-                                s=self.marker_size**2)
+            if self.prof_width is None:
+                self.ax_txn.scatter(txn['distance']/1000.0,
+                                    txn['value'] - self.offset[i],
+                                    c=pp.mplColors[i],
+                                    s=self.marker_size**2)
+            else:
+                # Plot with standard deviation when we have a profile width
+                self.ax_txn.plot(txn['distance']/1000.0,
+                                    txn['value'] - self.offset[i],
+                                    color=pp.mplColors[i+1])
+                self.ax_txn.fill_between(txn['distance']/1000.0,
+                                    txn['value'] - self.offset[i] - txn['std'],
+                                    txn['value'] - self.offset[i] + txn['std'],
+                                    color=pp.mplColors[i],
+                                    alpha=0.7)
+                
             # Added by Ollie, 21-07-11
             # Save profile to file 
             # TODO - should put this in a separate script, not in the plotting script
@@ -351,7 +366,10 @@ class transectionViewer():
         if 'Y_FIRST' in self.atr.keys():
             lat0, lon0 = self.coord.radar2geo(start_yx[0], start_yx[1])[0:2]
             lat1, lon1 = self.coord.radar2geo(end_yx[0], end_yx[1])[0:2]
-            msg += '\nlat/lon: ({:.4f}, {:.4f}) --> ({:.4f}, {:.4f})'.format(lat0, lon0, lat1, lon1)
+            msg += '\nlat/lon: ({:.2f}, {:.2f}) --> ({:.2f}, {:.2f})'.format(lat0, lon0, lat1, lon1)
+        if self.prof_width is not None:
+            msg += '\nProfile width: {:.1f} km'.format(self.prof_width)
+            
         self.ax_txn.set_title(msg, fontsize=self.font_size)
 
         # axis format
@@ -369,6 +387,7 @@ class transectionViewer():
         self.ax_txn.tick_params(which='both', direction='in', labelsize=self.font_size,
                                 bottom=True, top=True, left=True, right=True)
         self.ax_txn.set_xlim(0, txn['distance'][-1]/1000.0)
+        # plt.tight_layout()
         self.fig.canvas.draw()
         return
 

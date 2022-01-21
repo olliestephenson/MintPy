@@ -231,7 +231,7 @@ def read_timeseries_yx(y, x, ts_file, ref_y=None, ref_x=None,
 
 
 #####################################################################
-def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest'):
+def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest',prof_width=None):
     """Extract 2D matrix (z) value along the line [x0,y0;x1,y1]
     Link: http://stackoverflow.com/questions/7878398/how-to-extract-an-arbitrary-line-of-values-from-a-numpy-array
 
@@ -244,6 +244,8 @@ def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest'):
                     'linear'  - linear  spline interpolation (order of 1)
                     'cubic'   - cubic   spline interpolation (order of 3)
                     'quintic' - quintic spline interpolation (order of 5)
+                prof_width : width of the profile in pixels 
+                
 
     Returns:    transect: (dict) containing 1D matrix:
                     'X' - 1D np.array for X/column coordinates in float32
@@ -270,27 +272,49 @@ def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest'):
     num_pts = int(np.hypot(x1-x0, y1-y0))
     ys = np.linspace(y0, y1, num_pts, dtype=np.float32)
     xs = np.linspace(x0, x1, num_pts, dtype=np.float32)
+    
+
+    # Added by Ollie Dec 21
+    if prof_width is not None:
+        import skimage.measure 
+        import scipy.signal
+        # Use nan functions to take account of masking 
+        # TODO - be careful! profile width is only approximately mapped on to pixels 
+        #      - we have problems when there's missing/masked data
+        z_line = skimage.measure.profile_line(z,(y0,x0),(y1,x1),linewidth=prof_width,reduce_func=np.nanmedian,mode='constant',cval=0.0)
+        z_line_std = skimage.measure.profile_line(z,(y0,x0),(y1,x1),linewidth=prof_width,reduce_func=np.nanstd,mode='constant',cval=0.0)
+        # profile_line doesn't always give the right number of points 
+        # Assuming that we're just different by a small number of points due to skimage usage
+        z_line_std = z_line_std[:num_pts]
+        z_line = z_line[:num_pts]
+        med_filt=True
+        if med_filt:
+            z_line_std = scipy.signal.medfilt(z_line_std,kernel_size=21)
+            z_line = scipy.signal.medfilt(z_line,kernel_size=21)
+        
+        # z_line = z_line[:num_pts] # Make the profile the right length
 
     # Extract z value along the line
     # for nearest neighbor sampling, use indexing directly
     # for other interpolation, use scipy.ndimage.map_coordinates
-    if interpolation == 'nearest':
-        z_line = z[np.rint(ys).astype(np.int), np.rint(xs).astype(np.int)]
-
     else:
-        # interpolation name to order
-        interpolate_name2order = {
-            'linear' : 1,
-            'cubic'  : 3,
-            'quintic': 5,
-        }
-        if interpolation not in interpolate_name2order.keys():
-            msg = 'un-supported interpolation method: {}'.format(interpolation)
-            msg += '\navailable methods: {}'.format(interpolate_name2order.keys())
-            raise ValueError(msg)
-        interp_order = interpolate_name2order[interpolation.lower()]
-        # run interpolation
-        z_line = map_coordinates(z, np.vstack((ys, xs)), order=interp_order)
+        if interpolation == 'nearest':
+            z_line = z[np.rint(ys).astype(np.int), np.rint(xs).astype(np.int)]
+
+        else:
+            # interpolation name to order
+            interpolate_name2order = {
+                'linear' : 1,
+                'cubic'  : 3,
+                'quintic': 5,
+            }
+            if interpolation not in interpolate_name2order.keys():
+                msg = 'un-supported interpolation method: {}'.format(interpolation)
+                msg += '\navailable methods: {}'.format(interpolate_name2order.keys())
+                raise ValueError(msg)
+            interp_order = interpolate_name2order[interpolation.lower()]
+            # run interpolation
+            z_line = map_coordinates(z, np.vstack((ys, xs)), order=interp_order)
 
     # Calculate Distance along the line
     earth_radius = 6.3781e6    # in meter
@@ -302,6 +326,10 @@ def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest'):
     else:
         x_step = range_ground_resolution(atr)
         y_step = azimuth_ground_resolution(atr)
+    # Added by Ollie Dec 21
+    if (np.abs(x_step/y_step) > 1.3 or np.abs(x_step/y_step) < 0.7) and prof_width is not None:
+        # print(x_step/y_step)
+        raise Exception('Wide profiles will not work unless pixels geocoded and roughly square. x_step: {:.2f}, y_step: {:.2f}'.format(x_step,y_step)) 
     dist_line = np.hypot((xs - x0) * x_step,
                          (ys - y0) * y_step)
 
@@ -314,16 +342,39 @@ def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest'):
     transect['Y'] = ys[mask]
     transect['X'] = xs[mask]
     transect['value'] = z_line[mask]
+    if prof_width is not None:
+        transect['std'] = z_line_std[mask]
     transect['distance'] = dist_line[mask]
     return transect
 
 
-def transect_lalo(z, atr, start_lalo, end_lalo, interpolation='nearest'):
+def transect_lalo(z, atr, start_lalo, end_lalo, interpolation='nearest',prof_width=None):
     """Extract 2D matrix (z) value along the line [start_lalo, end_lalo]"""
+    # Added by Ollie Dec 21
+    # Convert profile width into pixels 
+    if prof_width is not None:
+        earth_radius = 6.3781e6    # in meter
+        if 'Y_FIRST' in atr.keys():
+            # [lat0, lat1] = coordinate(atr).yx2lalo([y0, y1], coord_type='y')
+            [lat0, lat1] = [start_lalo[0],end_lalo[0]]
+            print(start_lalo, end_lalo)
+            lat_c = (lat0 + lat1) / 2. # Central latitute of profile
+            x_step = float(atr['X_STEP']) * np.pi/180.0 * earth_radius * np.cos(lat_c * np.pi/180)
+            y_step = float(atr['Y_STEP']) * np.pi/180.0 * earth_radius
+        else:
+            x_step = range_ground_resolution(atr)
+            y_step = azimuth_ground_resolution(atr)
+        # Check that pixel sizes aren't too different 
+        if (np.abs(x_step/y_step) > 1.3 or np.abs(x_step/y_step) < 0.7):
+            # raise Exception('prof_width will not work unless pixels are roughly square') 
+            raise Exception('Wide profiles will not work unless pixels geocoded and roughly square. x_step: {:.2f}, y_step: {:.2f}'.format(x_step,y_step)) 
+        step_avg = (np.abs(x_step) + np.abs(y_step))/2
+        prof_width = int(np.rint(prof_width*1000/step_avg)) # get width in integer pixels (input in km) 
+        
     coord = coordinate(atr)
     [y0, y1] = coord.lalo2yx([start_lalo[0], end_lalo[0]], coord_type='lat')
     [x0, x1] = coord.lalo2yx([start_lalo[1], end_lalo[1]], coord_type='lon')
-    transect = transect_yx(z, atr, [y0, x0], [y1, x1], interpolation)
+    transect = transect_yx(z, atr, [y0, x0], [y1, x1], interpolation, prof_width=prof_width)
     return transect
 
 
@@ -348,9 +399,9 @@ def transect_lines(z, atr, lines):
         # read segment data
         start_lalo, end_lalo = lines[i][0], lines[i][1]
         if 'Y_FIRST' in atr.keys():
-            seg = transect_lalo(z, atr, start_lalo, end_lalo)
+            seg = transect_lalo(z, atr, start_lalo, end_lalo,prof_width=self.prof_width)
         else:
-            seg = transect_yx(z, atr, start_lalo, end_lalo)
+            seg = transect_yx(z, atr, start_lalo, end_lalo,prof_width=self.prof_width)
         seg['distance'] += start_distance
 
         # connect each segment
