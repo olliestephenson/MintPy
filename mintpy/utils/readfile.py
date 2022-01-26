@@ -274,6 +274,12 @@ def read(fname, box=None, datasetName=None, print_msg=True, xstep=1, ystep=1, da
         dsname4atr = datasetName[0].split('-')[0]
     elif isinstance(datasetName, str):
         dsname4atr = datasetName.split('-')[0]
+    
+    # Ollie - deal with ionosphere multilooking
+    if isinstance(datasetName,str) and datasetName.startswith('ion'):
+        # print('     >>> Do not multilook ionosphere (topsStack ionosphere has 10x lower resolution already)')
+        xstep = 1
+        ystep = 1
     atr = read_attribute(fname, datasetName=dsname4atr)
 
     # box
@@ -510,7 +516,9 @@ def read_binary_file(fname, datasetName=None, box=None, xstep=1, ystep=1):
             data_type = dataTypeDict[data_type]
 
         k = atr['FILE_TYPE'].lower().replace('.', '')
-        if k in ['unw', 'cor']:
+        # if k in ['unw', 'cor']:
+        # Ollie - deal with ionosphere
+        if k in ['unw', 'cor','ion']:
             band = min(2, num_band)
             if datasetName and datasetName in ['band1','intensity','magnitude']:
                 band = 1
