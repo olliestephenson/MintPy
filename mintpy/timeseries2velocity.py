@@ -532,6 +532,7 @@ def run_timeseries2time_func(inps):
             print('referencing to point (y, x): ({}, {})'.format(inps.ref_yx[0], inps.ref_yx[1]))
             ref_box = (inps.ref_yx[1], inps.ref_yx[0], inps.ref_yx[1]+1, inps.ref_yx[0]+1)
             ref_val = readfile.read(inps.timeseries_file, box=ref_box)[0]
+            print(ref_box, ref_val)
             ts_data -= np.tile(ref_val.reshape(ts_data.shape[0], 1, 1),
                                (1, ts_data.shape[1], ts_data.shape[2]))
 

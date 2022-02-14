@@ -204,7 +204,16 @@ def prepare_stack(inputDir, filePattern, metadata=dict(), baseline_dict=dict(), 
         # prepare metadata for current file
         isce_file = isce_files[i]
         if processor in ['tops', 'stripmap']:
-            dates = os.path.basename(os.path.dirname(isce_file)).split('_')  # to modify to YYYYMMDDTHHMMSS
+            # Added by Ollie - take account of topsApp input file paths 
+            # topsStack: /marmot-nobak/olstephe/InSAR/Makran/T13a/process/20210219-20210327/merged/filt_topophase.unw.geo
+            # TODO must be a neater way than this - just pass topsApp in via the config file?  
+            import re
+            if re.search("20\w\w\w\w\w\w-20",isce_file):
+                dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-') # topsApp
+            elif re.search("20\w\w\w\w\w\w_20",isce_file):
+                dates = os.path.basename(os.path.dirname(isce_file)) # topsStack ,# to modify to YYYYMMDDTHHMMSS
+            else:
+                raise Exception('Can not parse {}'.format(isce_file))
         elif processor == 'alosStack':
             dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-')  # to modify to YYYYMMDDTHHMMSS
             dates = ptime.yyyymmdd(dates)
