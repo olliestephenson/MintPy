@@ -208,6 +208,26 @@ def prepare_stack(inputDir, filePattern, metadata=dict(), baseline_dict=dict(), 
         date12 = ptime.get_date12_from_path(isce_file)
         dates = ptime.yyyymmdd(date12.replace('-','_').split('_'))
         prog_bar.update(i+1, suffix='{}_{}'.format(dates[0], dates[1]))
+    
+    # for i in range(num_file):
+    #     # prepare metadata for current file
+    #     isce_file = isce_files[i]
+    #     if processor in ['tops', 'stripmap']:
+    #         # Added by Ollie - take account of topsApp input file paths 
+    #         # topsStack: /marmot-nobak/olstephe/InSAR/Makran/T13a/process/20210219-20210327/merged/filt_topophase.unw.geo
+    #         # TODO must be a neater way than this - just pass topsApp in via the config file?  
+    #         import re
+    #         if re.search("20\w\w\w\w\w\w-20",isce_file):
+    #             dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-') # topsApp
+    #         elif re.search("20\w\w\w\w\w\w_20",isce_file):
+    #             dates = os.path.basename(os.path.dirname(isce_file)) # topsStack ,# to modify to YYYYMMDDTHHMMSS
+    #         else:
+    #             raise Exception('Can not parse {}'.format(isce_file))
+    #     elif processor == 'alosStack':
+    #         dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-')  # to modify to YYYYMMDDTHHMMSS
+    #         dates = ptime.yyyymmdd(dates)
+    #     else:
+    #         raise ValueError('Un-recognized ISCE stack processor: {}'.format(processor))
 
         # merge metadata from: data.rsc, *.unw.xml and DATE12/P_BASELINE_TOP/BOTTOM_HDR
         ifg_metadata = readfile.read_attribute(isce_file, metafile_ext='.xml')
