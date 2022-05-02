@@ -211,7 +211,7 @@ def prepare_stack(inputDir, filePattern, metadata=dict(), baseline_dict=dict(), 
             if re.search("20\w\w\w\w\w\w-20",isce_file):
                 dates = os.path.basename(os.path.dirname(os.path.dirname(isce_file))).split('-') # topsApp
             elif re.search("20\w\w\w\w\w\w_20",isce_file):
-                dates = os.path.basename(os.path.dirname(isce_file)) # topsStack ,# to modify to YYYYMMDDTHHMMSS
+                dates = os.path.basename(os.path.dirname(isce_file)).split('_') # topsStack ,# to modify to YYYYMMDDTHHMMSS
             else:
                 raise Exception('Can not parse {}'.format(isce_file))
         elif processor == 'alosStack':
