@@ -463,6 +463,7 @@ def azimuth2heading_angle(az_angle):
     Below are typical values in deg for satellites with near-polar orbit:
         ascending  orbit: heading angle of -12  and azimuth angle of 102
         descending orbit: heading angle of -168 and azimuth angle of -102
+        # Ollie comment, March 2022 - are these angles correct? 
     """
     head_angle = 90 - az_angle
     head_angle -= np.round(head_angle / 360.) * 360.
