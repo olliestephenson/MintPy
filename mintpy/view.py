@@ -236,6 +236,9 @@ def update_inps_with_display_setting_file(inps, disp_set_file):
 
     if not inps.colormap and 'plot.colormap' in disp_set_dict.keys():
         inps.colormap = disp_set_dict['plot.colormap']
+    # # Added by Ollie - default to colormap - DOESN'T WORK
+    # elif not inps.colormap and not 'plot.colormap' in disp_set_dict.keys():
+    #     inps.colormap = 'RdBu_r'
 
     if not inps.subset_lat and 'plot.subset.lalo' in disp_set_dict.keys():
         inps.subset_lat = [float(n) for n in disp_set_dict['plot.subset.lalo'].replace(',', ' ').split()[0:2]]
@@ -1074,7 +1077,8 @@ def read_data4figure(i_start, i_end, inps, metadata):
 
         if inps.key == 'ifgramStack':
             # reference pixel info in unwrapPhase
-            if inps.dsetFamilyList[0].startswith('unwrapPhase') and inps.file_ref_yx:
+            # Modified by Ollie for ionoPhase referencing, May 2022 
+            if (inps.dsetFamilyList[0].startswith('unwrapPhase') or inps.dsetFamilyList[0].startswith('ionoPhase')) and inps.file_ref_yx:
                 ref_y, ref_x = inps.file_ref_yx
                 ref_box = (ref_x, ref_y, ref_x+1, ref_y+1)
                 ref_data = readfile.read(inps.file,
@@ -1516,8 +1520,10 @@ def prep_slice(cmd, auto_fig=False):
                               print_msg=False)[0]
 
     # reference in space for unwrapPhase
+    # Added by Ollie May 2022 - also reference for ionoPhase
     if (inps.key in ['ifgramStack']
-            and inps.dset[0].split('-')[0].startswith('unwrapPhase')
+            and (inps.dset[0].split('-')[0].startswith('unwrapPhase') 
+            or inps.dset[0].split('-')[0].startswith('ionoPhase'))
             and 'REF_Y' in atr.keys()):
         ref_y, ref_x = int(atr['REF_Y']), int(atr['REF_X'])
         ref_data = readfile.read(inps.file,
@@ -1615,8 +1621,10 @@ class viewer():
                                       print_msg=False)[0]
 
             # reference in space for unwrapPhase
+            # Modified by Ollie for ionoPhase referencing May 2022
             if (self.key in ['ifgramStack']
-                    and self.dset[0].split('-')[0].startswith('unwrapPhase')
+                    and (self.dset[0].split('-')[0].startswith('unwrapPhase')
+                    or inps.dset[0].split('-')[0].startswith('ionoPhase'))
                     and 'REF_Y' in self.atr.keys()):
                 ref_y, ref_x = int(self.atr['REF_Y']), int(self.atr['REF_X'])
                 ref_data = readfile.read(self.file,
