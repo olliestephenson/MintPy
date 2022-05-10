@@ -1,5 +1,3 @@
-############################################################
-# Program is part of MintPy                                #
 # Copyright (c) 2013, Zhang Yunjun, Heresh Fattahi         #
 # Author: Zhang Yunjun, Aug 2021                           #
 ############################################################
@@ -10,7 +8,10 @@
 import os
 import numpy as np
 from mintpy.utils import ptime, time_func
-
+# Added by Ollie
+import glob 
+from mintpy.objects import timeseries
+import re
 
 def estimate_S1AB_bias(mintpy_dir, ts_dis):
     """Estimate the bias between Sentinel-1 A and B.
@@ -71,7 +72,10 @@ def get_s1ab_date_list_file(mintpy_dir, print_msg=True):
 
         # get date/sensor_list
         vprint('\nread sensor info from file:', safe_list_file)
-        ts_file = glob.glob(mintpy_dir, 'timeseries*.h5')[0]
+        # Hard coded by Ollie 
+        # ts_file = glob.glob(os.path.join(mintpy_dir,'timeseries*.h5'))[0]
+        ts_file = os.path.join(mintpy_dir,'timeseries_SET_ERA5.h5') 
+        print(ts_file)
         date_list = timeseries(ts_file).get_date_list()
         sensor_list = safe_list_file2sensor_list(safe_list_file, date_list, print_msg=False)[0]
 

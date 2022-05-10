@@ -237,7 +237,7 @@ def main(iargs=None):
     else:
         # option 2 - estimate from the time series of its dataset itself
         # estimate optimal (median) value for each subswath from SenDT156
-        bias_list = estimate_S1AB_range_bias(ts_file, plot=inps.plot)[0]
+        bias_list = estimate_S1AB_range_bias(inps.ts_file, plot=inps.plot)[0]
 
     # write to S1Bias.h5 file
     bias_file = write_to_file(bias_list, geom_file=inps.geom_file, force=inps.force)
