@@ -493,15 +493,7 @@ def read_inps_dict2ifgram_stack_dict_object(iDict):
         # YYYYDDD       for gmtsar [modern Julian date]
         # YYYYMMDDTHHMM for uavsar
         # YYYYMMDD      for all the others
-        # Ollie - modified to read in Ionosphere Jan 22
-        # Better to modify 'read_attribute' in order to read in ionosphere
-        try:    
-            date6s = readfile.read_attribute(dsPath0)['DATE12'].replace('_','-').split('-')
-        except:
-            date6s = dsPath0.split('/')[-3].replace('_','-').split('-')
-            date6s[0] = date6s[0][2:]
-            date6s[1] = date6s[1][2:]
-            
+        date6s = readfile.read_attribute(dsPath0)['DATE12'].replace('_','-').split('-')
         if iDict['processor'] == 'gmtsar':
             date12MJD = os.path.basename(os.path.dirname(dsPath0))
         else:
@@ -521,11 +513,7 @@ def read_inps_dict2ifgram_stack_dict_object(iDict):
         for dsName in dsNameList:
             # search the matching data file for the given date12
             # 1st guess: file in the same order as the one for dsName0
-            # Ollie - put none if we don't have ionosphere
-            try:
-                dsPath1 = dsPathDict[dsName][i]
-            except:
-                dsPath1 = 'none'
+            dsPath1 = dsPathDict[dsName][i]
             if (all(d6 in dsPath1 for d6 in date6s)
                     or (date12MJD and date12MJD in dsPath1)):
                 ifgramPathDict[dsName] = dsPath1
@@ -540,7 +528,6 @@ def read_inps_dict2ifgram_stack_dict_object(iDict):
                     ifgramPathDict[dsName] = dsPath2[0]
                 else:
                     print('WARNING: {:>18} file missing for pair {}'.format(dsName, date6s))
-                    ifgramPathDict[dsName] = 'missing' #Ollie - load ionosphere
 
         # initiate ifgramDict object
         ifgramObj = ifgramDict(datasetDict=ifgramPathDict)
@@ -806,12 +793,10 @@ def prepare_metadata(iDict):
 
         # run module
         print('prep_isce.py', ' '.join(iargs))
-        prep_isce.main(iargs)
-        # Ollie - remove try prep isce so we can see why it fails
-        # try:
-            # prep_isce.main(iargs)
-        # except:
-        #     warnings.warn('prep_isce.py failed. Assuming its result exists and continue...')
+        try:
+            prep_isce.main(iargs)
+        except:
+            warnings.warn('prep_isce.py failed. Assuming its result exists and continue...')
 
     elif processor == 'aria':
         from mintpy import prep_aria
