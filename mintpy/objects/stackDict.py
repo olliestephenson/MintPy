@@ -274,16 +274,11 @@ class ifgramDict:
 
     def read(self, family, box=None, xstep=1, ystep=1):
         self.file = self.datasetDict[family]
-        # Ollie - deal with ionosphere
-        if self.file == 'missing':
-            data = np.nan
-            metadata = {}
-        else:
-            data, metadata = readfile.read(self.file,
-                                           datasetName=family,
-                                           box=box,
-                                           xstep=xstep,
-                                           ystep=ystep)
+        data, metadata = readfile.read(self.file,
+                                       datasetName=family,
+                                       box=box,
+                                       xstep=xstep,
+                                       ystep=ystep)
         return data, metadata
 
     def get_size(self, family=ifgramDatasetNames[0]):
