@@ -323,6 +323,10 @@ def estimate_bulkMotion(geomfile, vfile, venu=None, omega_cart=None, omega_sph=N
     # Project model to LOS velocity
     print('Project the bulk motion ENU onto radar LOS velocity')
     ve, vn, vu = np.array((V_enu[:,:,0])), np.array((V_enu[:,:,1])), np.array((V_enu[:,:,2]))
+    print(ve.shape)
+    print(V_enu.shape)
+    print(head_deg.shape)
+    print(inc_deg.shape)
     vlos = ut.enu2los(ve, vn, vu, inc_angle=inc_deg, head_angle=head_deg)
 
     ## Masking the bulk motion?
