@@ -274,14 +274,6 @@ def read(fname, box=None, datasetName=None, print_msg=True, xstep=1, ystep=1, da
         dsname4atr = datasetName[0].split('-')[0]
     elif isinstance(datasetName, str):
         dsname4atr = datasetName.split('-')[0]
-    
-    # Ollie - deal with ionosphere multilooking
-    # We need this for topsStack, not topsApp
-    # topsStack ionosphere date pairs are multilooked by a factor of 10, individual dates have the right resolution
-    if isinstance(datasetName,str) and datasetName.startswith('ion'):
-        # print('     >>> Do not multilook ionosphere (topsStack ionosphere has 10x lower resolution already)')
-        xstep = 1
-        ystep = 1
     atr = read_attribute(fname, datasetName=dsname4atr)
 
     # box
