@@ -213,8 +213,13 @@ def read_inps2dict(inps):
     if iDict['compression'] == False:
         iDict['compression'] = None
 
-    iDict['xstep'] = iDict.get('xstep', 1)
-    iDict['ystep'] = iDict.get('ystep', 1)
+    # Ollie tweak - ion pairs 10x lower resolution, don't need to downsample
+    if inps.only_load_ionosphere:
+        iDict['xstep'] = 1 
+        iDict['ystep'] = 1 
+    else:
+        iDict['xstep'] = iDict.get('xstep', 1)
+        iDict['ystep'] = iDict.get('ystep', 1)
 
     # PROJECT_NAME --> PLATFORM
     if not iDict['PROJECT_NAME']:
