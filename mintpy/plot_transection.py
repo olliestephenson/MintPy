@@ -56,6 +56,9 @@ def create_parser():
     parser.add_argument('--noverbose', dest='print_msg', action='store_false',
                         help='Disable the verbose message printing.')
 
+    parser.add_argument('--save_profile',dest='save_profile',action='store_true',help='Write profile values to file')
+    parser.add_argument('--profile_width',dest='prof_width',help='Width of the profile box in pixels. Without this arg we just take a profile along a line.',default=None,type=int)
+
     lines = parser.add_argument_group('Profile location', 'Start/end points of profile')
     lines.add_argument('--start-yx','--yx0', dest='start_yx', metavar=('Y0', 'X0'), type=int, nargs=2,
                        help='start point of the profile in pixel number [y, x]')
@@ -344,12 +347,14 @@ class transectionViewer():
                 txn = ut.transect_lalo(self.data_list[i],
                                        self.atr_list[i],
                                        start_lalo, end_lalo,
-                                       interpolation=self.interpolation)
+                                       interpolation=self.interpolation,
+                                       prof_width=self.prof_width)
             else:
                 txn = ut.transect_yx(self.data_list[i],
                                      self.atr_list[i],
                                      start_yx, end_yx,
-                                     interpolation=self.interpolation)
+                                     interpolation=self.interpolation,
+                                     prof_width=self.prof_width)
 
             # save txn
             txn_list.append(txn)
@@ -366,24 +371,41 @@ class transectionViewer():
                 dist_unit = 'km'
 
             # plot
-            # update distance values by excluding the commonly masked out pixels in the begining
-            self.ax_txn.scatter(x=(txn['distance'] - min_dist) * dist_scale,
-                                y=txn['value'] - self.offset[i],
-                                c=pp.mplColors[i],
-                                s=self.marker_size**2)
+            # # update distance values by excluding the commonly masked out pixels in the begining
+            # self.ax_txn.scatter(x=(txn['distance'] - min_dist) * dist_scale,
+            #                     y=txn['value'] - self.offset[i],
+            #                     c=pp.mplColors[i],
+            #                     s=self.marker_size**2)
+
+
+            # Added by Ollie
+            # plot
+            if self.prof_width is None:
+                self.ax_txn.scatter(txn['distance']/1000.0,
+                                    txn['value'] - self.offset[i],
+                                    c=pp.mplColors[i],
+                                    s=self.marker_size**2)
+            else:
+                # Plot with standard deviation when we have a profile width
+                self.ax_txn.plot(txn['distance']/1000.0,
+                                    txn['value'] - self.offset[i],
+                                    color=pp.mplColors[i+1])
+                self.ax_txn.fill_between(txn['distance']/1000.0,
+                                    txn['value'] - self.offset[i] - txn['std'],
+                                    txn['value'] - self.offset[i] + txn['std'],
+                                    color=pp.mplColors[i],
+                                    alpha=0.7)
 
         y0, x0, y1, x1 = start_yx + end_yx
         self.outfile_base = f'transect_Y{y0}X{x0}_Y{y1}X{x1}'
 
         # Added by Ollie - save transation in text file
-        self.save_txn_txt = True
-        if self.save_txn_txt:
+        if self.save_profile:
 
             outfile_txt = '{}.txt'.format(self.outfile_base)
             print('Saving profile to txt file')
             with open(outfile_txt,'w') as f:
                 f.write("Distance Lat Lon Velocity [cm/yr] \n")
-                print(txn.keys())
                 for i,value in enumerate(txn['value']):
                     f.write("{:.4f} {:.4f} {:.4f} {:.4f}\n".format(txn['distance'][i],txn['Lat'][i],txn['Lon'][i],txn['value'][i]))
 
@@ -393,6 +415,8 @@ class transectionViewer():
             lat0, lon0 = self.coord.radar2geo(start_yx[0], start_yx[1])[0:2]
             lat1, lon1 = self.coord.radar2geo(end_yx[0], end_yx[1])[0:2]
             msg += f'\nlat/lon: ({lat0:.4f}, {lon0:.4f}) --> ({lat1:.4f}, {lon1:.4f})'
+        if self.prof_width is not None:
+            msg += '\nProfile width: {:d} pixels'.format(self.prof_width)
         self.ax_txn.set_title(msg, fontsize=self.font_size)
 
         # axis format
