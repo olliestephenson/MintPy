@@ -981,15 +981,23 @@ class timeseriesViewer():
                 ts_fit -= off
 
             if self.offset:
+                # Added by Ollie - shift ts by median
+                ts_dis -= np.median(ts_dis)
                 ts_dis += self.offset * (num_file - 1 - i)
+                ts_fit -= np.median(ts_fit) 
                 ts_fit += self.offset * (num_file - 1 - i)
 
             # plot
             if not np.all(np.isnan(ts_dis)):
                 ppar = argparse.Namespace()
                 ppar.label = self.file_label[i]
-                ppar.mfc = pp.mplColors[num_file - 1 - i] if self.mask[y, x] != 0 else 'gray'
-                ppar.ms = self.marker_size - ms_step * (num_file - 1 - i)
+                # ppar.mfc = pp.mplColors[num_file - 1 - i] if self.mask[y, x] != 0 else 'gray'
+                # Note by Ollie - this leads to zero marker size for too many tracks I think?
+                # ppar.ms = self.marker_size - ms_step * (num_file - 1 - i)
+                # Added by Ollie - June 30th - alternate between red and blue when plotting corrections 
+                ppar.ms = 2
+                ppar.mfc = ["red","blue"][i%2]
+                print(ppar.ms)
                 # use smaller marker size for very long time series
                 if self.num_date > 1e3:
                     ppar.ms /= 10

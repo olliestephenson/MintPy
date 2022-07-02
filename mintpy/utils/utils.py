@@ -320,6 +320,13 @@ def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest'):
         lat_c = (lat0 + lat1) / 2.
         x_step = float(atr['X_STEP']) * np.pi/180.0 * earth_radius * np.cos(lat_c * np.pi/180)
         y_step = float(atr['Y_STEP']) * np.pi/180.0 * earth_radius
+
+        # Added by Ollie - get lat/lon of every point along the profile 
+        get_lat_lon_points=True
+        if get_lat_lon_points==True:
+            print('Adding lat/lon points to profile')
+            lat_points = np.array(coordinate(atr).yx2lalo(ys,coord_type='y'))
+            lon_points = np.array(coordinate(atr).yx2lalo(xs,coord_type='x'))
     else:
         try:
             x_step = range_ground_resolution(atr)
@@ -342,6 +349,9 @@ def transect_yx(z, atr, start_yx, end_yx, interpolation='nearest'):
     transect['value'] = z_line[mask]
     transect['distance'] = dist_line[mask]
     transect['distance_unit'] = dist_unit
+    if get_lat_lon_points==True:
+        transect['Lat'] = lat_points[mask]
+        transect['Lon'] = lon_points[mask]
 
     return transect
 
