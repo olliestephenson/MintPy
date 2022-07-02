@@ -372,8 +372,25 @@ class transectionViewer():
                                 c=pp.mplColors[i],
                                 s=self.marker_size**2)
 
+            
         y0, x0, y1, x1 = start_yx + end_yx
         self.outfile_base = f'transect_Y{y0}X{x0}_Y{y1}X{x1}'
+        
+        # Added by Ollie - save transation in text file
+        self.save_txn_txt = True
+        if self.save_txn_txt:
+            
+            outfile_txt = '{}.txt'.format(self.outfile_base)
+            print('Saving profile to txt file')
+            with open(outfile_txt,'w') as f:
+                f.write("Distance Lat Lon Velocity [cm/yr] \n")
+                print(txn.keys())
+                for i,value in enumerate(txn['value']):
+                    f.write("{:.4f} {:.4f} {:.4f} {:.4f}\n".format(txn['distance'][i],txn['Lat'][i],txn['Lon'][i],txn['value'][i]))
+                    
+                
+            
+            
 
         # title
         msg = f'y/x: ({y0}, {x0}) --> ({y1}, {x1})'

@@ -52,7 +52,9 @@ def create_parser():
                         type=float, nargs=2, default=[5., 3.],
                         help='figure size in inches - width and length')
     parser.add_argument('--tick-year-num', dest='tick_year_num',
-                        type=int, default=1, help='Year number per major tick')
+                        type=int, default=2, help='Year number per major tick')
+    parser.add_argument('--rms-y-lim', dest='rms_y_lim',
+                        type=float, default=80, help='Y limit for RMS plot [mm]')
     return parser
 
 
@@ -103,6 +105,7 @@ def analyze_rms(date_list, rms_list, inps):
     except:
         # equivalent calculation using numpy assuming Gaussian distribution
         rms_threshold = np.median(rms_list) / .6745 * inps.cutoff
+        print('Using Gaussian threshold')
 
     ex_idx = [rms_list.index(i) for i in rms_list if i > rms_threshold]
     print(('-'*50+'\ndate(s) with RMS > {} * median RMS'
@@ -123,10 +126,10 @@ def analyze_rms(date_list, rms_list, inps):
             os.remove(ex_date_file)
 
     # plot bar figure and save
-    fig_file = os.path.splitext(inps.rms_file)[0]+'.pdf'
+    fig_file = os.path.splitext(inps.rms_file)[0]+'_{:.1f}MAD.pdf'.format(inps.cutoff)
     fig, ax = plt.subplots(figsize=inps.fig_size)
     print('create figure in size:', inps.fig_size)
-    ax = plot_rms_bar(ax, date_list, np.array(rms_list)*1000., cutoff=inps.cutoff)
+    ax = plot_rms_bar(ax, date_list, np.array(rms_list)*1000., cutoff=inps.cutoff,ymax=inps.rms_y_lim)
     fig.savefig(fig_file, bbox_inches='tight', transparent=True)
     print('save figure to file: '+fig_file)
     return inps
@@ -135,7 +138,7 @@ def analyze_rms(date_list, rms_list, inps):
 def plot_rms_bar(ax, date_list, rms, cutoff=3., font_size=12,
                  tick_year_num=1, legend_loc='best',
                  disp_legend=True, disp_side_plot=True, disp_thres_text=False,
-                 ylabel='Residual phase RMS [mm]'):
+                 ylabel='Residual phase RMS [mm]',ymax=None):
     """ Bar plot Phase Residual RMS
     Parameters: ax : Axes object
                 date_list : list of string in YYYYMMDD format
@@ -157,8 +160,9 @@ def plot_rms_bar(ax, date_list, rms, cutoff=3., font_size=12,
     ax.bar(dates, rms, bar_width.days, color=pp.mplColors[0])
 
     # Plot reference date
+    # Removed by Ollie - don't want this 
     ref_idx = np.argmin(rms)
-    ax.bar(dates[ref_idx], rms[ref_idx], bar_width.days, color=pp.mplColors[1], label='Reference date')
+    # ax.bar(dates[ref_idx], rms[ref_idx], bar_width.days, color=pp.mplColors[1], label='Reference date')
 
     # Plot exclude dates
     rms_threshold = ut.median_abs_deviation_threshold(rms, center=0., cutoff=cutoff)
@@ -172,7 +176,8 @@ def plot_rms_bar(ax, date_list, rms, cutoff=3., font_size=12,
             label='Median Abs Dev * {}'.format(cutoff))
 
     # axis format
-    ax = pp.auto_adjust_yaxis(ax, np.append(rms, rms_threshold), font_size, ymin=0.0)
+    # Y axis added by Ollie  
+    ax = pp.auto_adjust_yaxis(ax, np.append(rms, rms_threshold), font_size, ymin=0.0, ymax=ymax)
     #ax.set_xlabel('Time [years]', fontsize=font_size)
     ax.set_ylabel(ylabel, fontsize=font_size)
     ax.tick_params(which='both', direction='in', labelsize=font_size,
@@ -183,7 +188,8 @@ def plot_rms_bar(ax, date_list, rms, cutoff=3., font_size=12,
         divider = make_axes_locatable(ax)
         ax2 = divider.append_axes("right", "10%", pad="2%")
         ax2.plot(np.ones(rms.shape, np.float32) * 0.5, rms, 'o', mfc='none', color=pp.mplColors[0])
-        ax2.plot(np.ones(rms.shape, np.float32)[ref_idx] * 0.5, rms[ref_idx], 'o', mfc='none', color=pp.mplColors[1])
+        # Remove reference in orange
+        # ax2.plot(np.ones(rms.shape, np.float32)[ref_idx] * 0.5, rms[ref_idx], 'o', mfc='none', color=pp.mplColors[1])
         if not np.all(ex_idx==False):
             ax2.plot(np.ones(rms.shape, np.float32)[ex_idx] * 0.5, rms[ex_idx], 'o', mfc='none', color='darkgray')
         ax2.plot(np.array([0, 1]), np.array([rms_threshold, rms_threshold]), '--k')

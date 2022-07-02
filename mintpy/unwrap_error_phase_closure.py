@@ -281,6 +281,43 @@ def calc_num_triplet_with_nonzero_integer_ambiguity(ifgram_file, mask_file=None,
         # calculate based on equation (8-9) and T_int equation inline.
         closure_pha = np.dot(C, unw)
         closure_int = np.round((closure_pha - ut.wrap(closure_pha)) / (2.*np.pi))
+
+        ## JUNE 2022 - tweaks by Ollie to find T122d unwrapping errors 
+        # Added by Ollie - find indices where we most often have non-zero closure phase  
+        # print(closure_pha.shape)
+        # print(unw.shape)
+        # print(C.shape)
+        # fig = plt.figure()
+        # print(closure_int)
+        # print(np.max(closure_int))
+        # print(np.min(closure_int))
+        # plt.imshow(closure_int[250:300,:],vmin=-6,vmax=6,cmap='RdBu_r')
+        # # Find the triplets which have the largest number of phase non closure 
+        
+        # # print(np.where(closure_int==6.0))
+        # plt.colorbar()
+        # # plt.ion()
+        # # plt.show()
+        # axes=plt.gca()
+        # axes.set_aspect('auto')
+        # plt.savefig('closure_int_{}.png'.format(i))
+        # print(np.nonzero(C[262,:]))
+        
+        # print('Date of max: {}'.format(sum_along[]))
+        # fig = plt.figure()
+        # plt.plot(sum_along)
+        # plt.savefig('sum_along_{}.png'.format(i))
+        
+        #### Find igram pairs corresponding to non-zero loop closures 
+        # sum_along = np.sum(closure_int,axis=1)
+        # max_ind = np.argmax(sum_along)
+        # print('Index of max: {}'.format(max_ind))
+
+        # date_inds = np.nonzero(C[max_ind,:])[0]
+        
+        # print('Date indices: {}'.format(date_inds))
+        # print('Dates: {}'.format(np.array(date12_list)[date_inds]))
+
         num_nonzero_closure[r0:r1, :] = np.sum(closure_int != 0, axis=0).reshape(-1, width)
 
         prog_bar.update(i+1, every=1, suffix='line {} / {}'.format(r0, length))

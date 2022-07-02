@@ -350,9 +350,11 @@ class resample:
                     lat_step = (src_lat1 - src_lat0) / (lut_lat.shape[0] - 1)
                     lon_step = (src_lon1 - src_lon0) / (lut_lat.shape[1] - 1)
                 self.lalo_step = (abs(lat_step) * -1., abs(lon_step))
+                print('hello')
 
             else:
                 # ensure lat/lon step sign
+                print('hi')
                 self.lalo_step = (abs(self.lalo_step[0]) * -1.,
                                   abs(self.lalo_step[1]) * 1.)
             print('output pixel size in (lat, lon) in degree: {}'.format(self.lalo_step))
